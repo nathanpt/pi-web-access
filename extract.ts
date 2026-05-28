@@ -31,7 +31,7 @@ const BLOCKED_HOST_PATTERNS = [
 	/^\[::\]$/,
 ];
 
-function validateUrl(rawUrl: string): URL {
+export function validateUrl(rawUrl: string): URL {
 	let parsed: URL;
 	try {
 		parsed = new URL(rawUrl);
@@ -250,6 +250,16 @@ export async function extractContent(
 		return { url, title: "", content: "", error: "Aborted" };
 	}
 
+	// Validate remote URLs early — blocks SSRF before any processing.
+	// Local file paths (video frames, etc.) skip this and are handled below.
+	if (url.startsWith("http://") || url.startsWith("https://")) {
+		try {
+			validateUrl(url);
+		} catch (err) {
+			return { url, title: "", content: "", error: errorMessage(err) };
+		}
+	}
+
 	if (options?.frames && !options.timestamp) {
 		const frameCount = options.frames;
 		const ytInfo = isYouTubeURL(url);
@@ -397,12 +407,6 @@ export async function extractContent(
 			if (isAbortError(err)) return abortedResult(url);
 			return { url, title: "", content: "", error: errorMessage(err) };
 		}
-	}
-
-	try {
-		validateUrl(url);
-	} catch (err) {
-		return { url, title: "", content: "", error: errorMessage(err) };
 	}
 
 	try {
