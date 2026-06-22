@@ -171,6 +171,9 @@ export function startCuratorServer(
 	} = options;
 	let browserConnected = false;
 	let lastHeartbeatAt = Date.now();
+	let stateChangedAt = Date.now();
+	let clientIdleMs: number | null = null;
+	let clientTimeoutSeconds = timeout;
 	let completed = false;
 	let watchdog: NodeJS.Timeout | null = null;
 	let state: ServerState = "SEARCHING";
@@ -192,6 +195,7 @@ export function startCuratorServer(
 		if (completed) return false;
 		completed = true;
 		state = "COMPLETED";
+		stateChangedAt = Date.now();
 		if (watchdog) {
 			clearInterval(watchdog);
 			watchdog = null;
@@ -212,6 +216,14 @@ export function startCuratorServer(
 		lastHeartbeatAt = Date.now();
 		browserConnected = true;
 	};
+
+	const getEffectiveTimeoutMs = (): number => Math.max(1000, Math.floor(clientTimeoutSeconds) * 1000);
+
+	const shouldTimeoutFromClientIdle = (): boolean => (
+		state === "RESULT_SELECTION" &&
+		clientIdleMs !== null &&
+		clientIdleMs >= getEffectiveTimeoutMs()
+	);
 
 	function validateToken(body: unknown, res: ServerResponse): boolean {
 		if (!body || typeof body !== "object") {
@@ -324,7 +336,18 @@ export function startCuratorServer(
 				if (!body) return;
 				if (!validateToken(body, res)) return;
 				touchHeartbeat();
+				const heartbeat = body as { idleMs?: unknown; timeoutSec?: unknown };
+				if (typeof heartbeat.timeoutSec === "number" && Number.isFinite(heartbeat.timeoutSec) && heartbeat.timeoutSec > 0) {
+					clientTimeoutSeconds = Math.min(600, Math.floor(heartbeat.timeoutSec));
+				}
+				if (typeof heartbeat.idleMs === "number" && Number.isFinite(heartbeat.idleMs) && heartbeat.idleMs >= 0) {
+					clientIdleMs = Math.floor(heartbeat.idleMs);
+				}
+				const timedOut = shouldTimeoutFromClientIdle();
 				sendJson(res, 200, { ok: true });
+				if (timedOut && markCompleted()) {
+					setImmediate(() => callbacks.onCancel("timeout"));
+				}
 				return;
 			}
 
@@ -570,10 +593,24 @@ export function startCuratorServer(
 			const url = `http://localhost:${addr.port}/?session=${sessionToken}`;
 
 			watchdog = setInterval(() => {
-				if (completed || !browserConnected) return;
+				if (completed) return;
+				if (!browserConnected) {
+					const noBrowserTimeoutMs = Math.max(5000, getEffectiveTimeoutMs());
+					if (state !== "RESULT_SELECTION") return;
+					if (Date.now() - stateChangedAt <= noBrowserTimeoutMs) return;
+					if (!markCompleted()) return;
+					setImmediate(() => callbacks.onCancel("timeout"));
+					return;
+				}
+				if (shouldTimeoutFromClientIdle()) {
+					if (!markCompleted()) return;
+					setImmediate(() => callbacks.onCancel("timeout"));
+					return;
+				}
 				if (Date.now() - lastHeartbeatAt <= STALE_THRESHOLD_MS) return;
+				const staleReason = state === "RESULT_SELECTION" ? "timeout" : "stale";
 				if (!markCompleted()) return;
-				setImmediate(() => callbacks.onCancel("stale"));
+				setImmediate(() => callbacks.onCancel(staleReason));
 			}, WATCHDOG_INTERVAL_MS);
 
 			resolve({
@@ -598,6 +635,7 @@ export function startCuratorServer(
 					if (completed) return;
 					sendSSE("done", {});
 					state = "RESULT_SELECTION";
+					stateChangedAt = Date.now();
 				},
 			});
 		});
