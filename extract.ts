@@ -8,6 +8,7 @@ import { extractPDFToMarkdown, isPDF } from "./pdf-extract.js";
 import { extractGitHub } from "./github-extract.js";
 import { isYouTubeURL, isYouTubeEnabled, extractYouTube, extractYouTubeFrame, extractYouTubeFrames, getYouTubeStreamInfo } from "./youtube-extract.js";
 import { extractWithUrlContext, extractWithGeminiWeb } from "./gemini-url-context.js";
+import { extractWithParallel } from "./parallel.js";
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./video-extract.js";
 import { formatSeconds } from "./utils.js";
 
@@ -418,6 +419,12 @@ export async function extractContent(
 
 	const jinaResult = await extractWithJinaReader(url, signal);
 	if (jinaResult) return jinaResult;
+	if (signal?.aborted) return abortedResult(url);
+
+	// Parallel Extract: server-side render + extract, handles JS-heavy pages and PDFs.
+	// Paid provider — placed after the free Jina Reader, before Gemini.
+	const parallelResult = await extractWithParallel(url, signal, options);
+	if (parallelResult) return parallelResult;
 	if (signal?.aborted) return abortedResult(url);
 
 	let geminiResult: ExtractedContent | null = null;

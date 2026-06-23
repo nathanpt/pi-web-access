@@ -199,7 +199,7 @@ PDF URLs are extracted as text and saved to `~/Downloads/` as markdown. The agen
 
 ### Blocked pages
 
-When Readability fails or returns only a cookie notice, the extension retries via Jina Reader (handles JS rendering server-side, no API key needed), then Gemini URL Context API, then Gemini Web extraction when browser cookies are enabled. Handles SPAs, JS-heavy pages, and anti-bot protections transparently. Also parses Next.js RSC flight data when present.
+When Readability fails or returns only a cookie notice, the extension retries via Jina Reader (handles JS rendering server-side, no API key needed), then Parallel Extract (when a Parallel API key is configured — a server-side renderer that also handles PDFs), then Gemini URL Context API, then Gemini Web extraction when browser cookies are enabled. Handles SPAs, JS-heavy pages, and anti-bot protections transparently. Also parses Next.js RSC flight data when present.
 
 ## How It Works
 
@@ -212,7 +212,7 @@ fetch_content(url)
   → GitHub URL?  Clone repo, return file contents + local path
   → YouTube URL? Gemini Web (if browser cookies enabled) → Gemini API → Perplexity
   → HTTP fetch → PDF? Extract text, save to ~/Downloads/
-               → HTML? Readability → RSC parser → Jina Reader → Gemini fallback
+               → HTML? Readability → RSC parser → Jina Reader → Parallel Extract (if keyed) → Gemini fallback
                → Text/JSON/Markdown? Return directly
 ```
 

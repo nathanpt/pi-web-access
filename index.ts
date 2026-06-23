@@ -114,7 +114,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini") {
+	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini" || normalized === "parallel") {
 		return normalized;
 	}
 	return "auto";
@@ -1089,7 +1089,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using Perplexity AI, Exa, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key, MCP fallback without), else Perplexity (needs key), else Gemini API (needs key), else Gemini Web (needs a supported Chromium-based browser login).`,
+			`Search the web using Perplexity AI, Exa, Gemini, or Parallel. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key, MCP fallback without), else Perplexity (needs key), else Gemini API (needs key), else Gemini Web (needs a supported Chromium-based browser login). Set provider explicitly to "parallel" to use the Parallel search API (needs a Parallel API key).`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
 		parameters: Type.Object({
@@ -1102,7 +1102,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-				StringEnum(["auto", "perplexity", "gemini", "exa"], { description: "Search provider (default: auto)" }),
+				StringEnum(["auto", "perplexity", "gemini", "exa", "parallel"], { description: "Search provider (default: auto)" }),
 			),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review"], {
