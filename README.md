@@ -6,6 +6,7 @@
 
 **Web search, content extraction, and video understanding for Pi agent. Zero-config Exa search, optional browser-cookie Gemini Web, or bring your own API keys.**
 
+[![CI](https://img.shields.io/github/actions/workflow/status/nathanpt/pi-web-access/ci.yml?style=for-the-badge&label=CI)](https://github.com/nathanpt/pi-web-access/actions/workflows/ci.yml)
 [![Status: Maintained Fork](https://img.shields.io/badge/Status-Maintained%20Fork-blue?style=for-the-badge)](#maintenance--fork-status)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows*-blue?style=for-the-badge)]()
