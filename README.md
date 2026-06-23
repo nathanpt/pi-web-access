@@ -6,9 +6,17 @@
 
 **Web search, content extraction, and video understanding for Pi agent. Zero-config Exa search, optional browser-cookie Gemini Web, or bring your own API keys.**
 
-[![npm version](https://img.shields.io/npm/v/pi-web-access?style=for-the-badge)](https://www.npmjs.com/package/pi-web-access)
+[![Status: Maintained Fork](https://img.shields.io/badge/Status-Maintained%20Fork-blue?style=for-the-badge)](#maintenance--fork-status)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows*-blue?style=for-the-badge)]()
+
+> ⚠️ **Maintained fork.** This is an actively maintained fork of
+> [`nicobailon/pi-web-access`](https://github.com/nicobailon/pi-web-access). The
+> upstream project is **no longer maintained** (30+ open PRs unactioned since
+> **5/4/26**). `upstream` stays pointed at the original and its outstanding PRs are
+> being merged into this fork. **Not published to npm** — install locally with
+> `pi -e /home/nathan/dev/projects/pi-web-access`. See
+> [Maintenance & Fork Status](#maintenance--fork-status) below.
 
 https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 
@@ -24,9 +32,16 @@ https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 
 ## Install
 
+This fork is **not published to npm** — the `pi-web-access` package on npm is the
+original, now-unmaintained upstream version. Install this fork directly from a
+local checkout:
+
 ```bash
-pi install npm:pi-web-access
+pi -e /home/nathan/dev/projects/pi-web-access
 ```
+
+> Replace the path with your own clone location if you checked the fork out elsewhere.
+> See [Maintenance & Fork Status](#maintenance--fork-status) for background.
 
 Works immediately with no API keys — Exa MCP provides zero-config search. For more providers or direct API access, add keys to `~/.pi/web-search.json`:
 
@@ -34,11 +49,12 @@ Works immediately with no API keys — Exa MCP provides zero-config search. For 
 {
   "exaApiKey": "exa-...",
   "perplexityApiKey": "pplx-...",
-  "geminiApiKey": "AIza..."
+  "geminiApiKey": "AIza...",
+  "parallelApiKey": "parallel-key..."
 }
 ```
 
-In `auto` mode (default), `web_search` tries Exa first (direct API if keyed, MCP if not), then Perplexity, then Gemini API, then Gemini Web when browser-cookie access is enabled.
+In `auto` mode (default), `web_search` tries Exa first (direct API if keyed, MCP if not), then Perplexity, then Gemini API, then Gemini Web when browser-cookie access is enabled. The `parallel` provider is opt-in only — set `provider: "parallel"` explicitly (it is not part of auto selection or fallback ordering) and requires a Parallel API key.
 
 Optional dependencies for video frame extraction:
 
@@ -74,7 +90,7 @@ fetch_content({ url: "/path/to/recording.mp4", prompt: "What error appears on sc
 
 ### web_search
 
-Search the web via Exa, Perplexity AI, or Gemini. Returns a synthesized answer with source citations.
+Search the web via Exa, Perplexity AI, Gemini, or Parallel. Returns a synthesized answer with source citations.
 
 ```typescript
 web_search({ query: "rust async programming" })
@@ -82,6 +98,7 @@ web_search({ queries: ["query 1", "query 2"] })
 web_search({ query: "latest news", numResults: 10, recencyFilter: "week" })
 web_search({ query: "...", domainFilter: ["github.com"] })
 web_search({ query: "...", provider: "exa" })
+web_search({ query: "...", provider: "parallel" })
 web_search({ query: "...", includeContent: true })
 web_search({ queries: ["query 1", "query 2"], workflow: "none" })
 web_search({ queries: ["query 1", "query 2"], workflow: "summary-review" })
@@ -93,7 +110,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "summary-review" })
 | `numResults` | Results per query (default: 5, max: 20) |
 | `recencyFilter` | `day`, `week`, `month`, or `year` |
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
-| `provider` | `auto` (default), `exa`, `perplexity`, or `gemini` |
+| `provider` | `auto` (default), `exa`, `perplexity`, `gemini`, or `parallel` (opt-in; not part of auto/fallback) |
 | `includeContent` | Fetch full page content from sources in background |
 | `workflow` | `none` (skip curator) or `summary-review` (auto-generate summary draft after search completion, default) |
 
@@ -260,6 +277,7 @@ All config lives in `~/.pi/web-search.json`. Every field is optional.
   "exaApiKey": "exa-...",
   "perplexityApiKey": "pplx-...",
   "geminiApiKey": "AIza...",
+  "parallelApiKey": "parallel-key...",
   "provider": "exa",
   "chromeProfile": "Profile 2",
   "allowBrowserCookies": false,
@@ -289,7 +307,7 @@ All config lives in `~/.pi/web-search.json`. Every field is optional.
 }
 ```
 
-`EXA_API_KEY`, `GEMINI_API_KEY`, and `PERPLEXITY_API_KEY` env vars take precedence over config file values. `provider` sets the default search provider: `"exa"`, `"perplexity"`, or `"gemini"`. This is also updated automatically when you change the provider in the curator UI. `workflow` sets the default curator mode: `"summary-review"` (default, opens curator with auto-generated summary draft) or `"none"` (raw results, no curator). Overridden per-call via the `workflow` parameter on `web_search`, or toggled at runtime with `/curator`. `chromeProfile` overrides the Chromium profile directory used for Gemini Web cookie lookup. `allowBrowserCookies` enables Chromium cookie extraction for Gemini Web; it defaults to `false` to avoid surprise macOS Keychain prompts. You can also set `PI_ALLOW_BROWSER_COOKIES=1`. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults. `summaryModel` sets the default model used for generating summary drafts in the curator UI (e.g. `"anthropic/claude-haiku-4-5"` or `"openai-codex/gpt-5.3-codex-spark"`). Only models available in your model registry are eligible; if the configured model is unavailable, the default falls back to the built-in preference list. `curatorTimeoutSeconds` controls the initial curator idle timeout (default `20`, max `600`); users can still adjust the timer in the curator UI.
+`EXA_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, and `PARALLEL_API_KEY` env vars take precedence over config file values. `provider` sets the default search provider: `"exa"`, `"perplexity"`, `"gemini"`, or `"parallel"`. This is also updated automatically when you change the provider in the curator UI. The `parallel` provider is opt-in: it must be selected explicitly via the `provider` parameter or config and is not included in `auto` selection or fallback ordering; it requires a Parallel API key (`parallelApiKey` or `PARALLEL_API_KEY`). `workflow` sets the default curator mode: `"summary-review"` (default, opens curator with auto-generated summary draft) or `"none"` (raw results, no curator). Overridden per-call via the `workflow` parameter on `web_search`, or toggled at runtime with `/curator`. `chromeProfile` overrides the Chromium profile directory used for Gemini Web cookie lookup. `allowBrowserCookies` enables Chromium cookie extraction for Gemini Web; it defaults to `false` to avoid surprise macOS Keychain prompts. You can also set `PI_ALLOW_BROWSER_COOKIES=1`. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults. `summaryModel` sets the default model used for generating summary drafts in the curator UI (e.g. `"anthropic/claude-haiku-4-5"` or `"openai-codex/gpt-5.3-codex-spark"`). Only models available in your model registry are eligible; if the configured model is unavailable, the default falls back to the built-in preference list. `curatorTimeoutSeconds` controls the initial curator idle timeout (default `20`, max `600`); users can still adjust the timer in the curator UI.
 
 ### Shortcuts
 
@@ -319,6 +337,32 @@ Rate limits: Perplexity is capped at 10 requests/minute (client-side). Content f
 - GitHub branch names with slashes may misresolve file paths; the clone still works and the agent can navigate manually.
 - Non-code GitHub URLs (issues, PRs, wiki) fall through to normal web extraction.
 
+## Maintenance & Fork Status
+
+This repository is an **actively maintained fork** of
+[`nicobailon/pi-web-access`](https://github.com/nicobailon/pi-web-access). The
+upstream project is no longer maintained — **30+ open pull requests have gone
+unactioned since 5/4/26**.
+
+**How this fork is run:**
+
+- **`upstream` → original repo** (`nicobailon/pi-web-access`). The `upstream` git
+  remote stays pointed at the original so its history and outstanding PRs can be
+  pulled in.
+- **PRs are being merged here.** The open PRs from upstream are being reviewed and
+  pulled into this fork incrementally.
+- **Not on npm (for now).** Do **not** install via `pi install npm:pi-web-access` —
+  that pulls the original, unmaintained version. Install this fork from a local
+  checkout instead:
+
+  ```bash
+  pi -e /home/nathan/dev/projects/pi-web-access
+  ```
+
+Contributions (fixes, features, cherry-picked upstream PRs) are welcome as PRs
+against **this fork**. When referencing upstream commits or PRs, please cite the
+original author's work.
+
 <details>
 <summary>Files</summary>
 
@@ -329,6 +373,7 @@ Rate limits: Perplexity is capped at 10 requests/minute (client-side). Content f
 | `curator-server.ts` | Ephemeral HTTP server with SSE streaming and state machine |
 | `summary-review.ts` | Summary prompt construction, model-based draft generation, and deterministic fallback summary |
 | `exa.ts` | Exa.ai search provider — direct API and MCP proxy, budget tracking |
+| `parallel.ts` | Parallel search provider — `api.parallel.ai` web search, `provider: "parallel"` (opt-in) |
 | `code-search.ts` | Code/docs search via Exa MCP |
 | `extract.ts` | URL/file path routing, HTTP extraction, fallback orchestration |
 | `gemini-search.ts` | Search routing across Exa, Perplexity, Gemini API, Gemini Web |
