@@ -5,7 +5,11 @@ import { after, test } from "node:test";
 const curatorPageShim = new URL("../curator-page.js", import.meta.url);
 let wroteCuratorPageShim = false;
 
-const TEST_TIMEOUT_MS = 8000;
+// The server enforces a >=5s floor before its no-browser/idle timeout fires
+// (Math.max(5000, …)) and checks it on a 5s watchdog interval, so a real
+// timeout lands around 5-10s. Use a generous budget so this isn't flaky on
+// slower shared CI runners (upstream never ran this under CI).
+const TEST_TIMEOUT_MS = 20000;
 
 async function loadServer() {
 	try {
