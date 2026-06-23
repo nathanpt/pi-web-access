@@ -18,6 +18,40 @@ const CONCURRENT_LIMIT = 3;
 const NON_RECOVERABLE_ERRORS = ["Unsupported content type", "Response too large"];
 const MIN_USEFUL_CONTENT = 500;
 
+const ALLOWED_PROTOCOLS_SSRF = ["http:", "https:"];
+const BLOCKED_HOST_PATTERNS = [
+	/^localhost$/i,
+	/^127\.\d+\.\d+\.\d+$/,
+	/^169\.254\.\d+\.\d+$/,
+	/^10\.\d+\.\d+\.\d+$/,
+	/^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
+	/^192\.168\.\d+\.\d+$/,
+	/^0\.0\.0\.0$/,
+	/^\[::1\]$/,
+	/^\[::\]$/,
+];
+
+export function validateUrl(rawUrl: string): URL {
+	let parsed: URL;
+	try {
+		parsed = new URL(rawUrl);
+	} catch {
+		throw new Error(`Invalid URL: "${rawUrl}"`);
+	}
+	if (!ALLOWED_PROTOCOLS_SSRF.includes(parsed.protocol)) {
+		throw new Error(
+			`URL protocol "${parsed.protocol}" is not allowed. Only http: and https: are supported.`,
+		);
+	}
+	const hostname = parsed.hostname.toLowerCase();
+	if (BLOCKED_HOST_PATTERNS.some((p) => p.test(hostname))) {
+		throw new Error(
+			`URL hostname "${hostname}" points to a private/internal network and is blocked.`,
+		);
+	}
+	return parsed;
+}
+
 function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
@@ -76,6 +110,7 @@ async function extractWithJinaReader(
 	url: string,
 	signal?: AbortSignal,
 ): Promise<ExtractedContent | null> {
+	validateUrl(url);
 	const jinaUrl = JINA_READER_BASE + url;
 
 	const activityId = activityMonitor.logStart({ type: "api", query: `jina: ${url}` });
@@ -213,6 +248,16 @@ export async function extractContent(
 ): Promise<ExtractedContent> {
 	if (signal?.aborted) {
 		return { url, title: "", content: "", error: "Aborted" };
+	}
+
+	// Validate remote URLs early — blocks SSRF before any processing.
+	// Local file paths (video frames, etc.) skip this and are handled below.
+	if (url.startsWith("http://") || url.startsWith("https://")) {
+		try {
+			validateUrl(url);
+		} catch (err) {
+			return { url, title: "", content: "", error: errorMessage(err) };
+		}
 	}
 
 	if (options?.frames && !options.timestamp) {
@@ -365,12 +410,6 @@ export async function extractContent(
 	}
 
 	try {
-		new URL(url);
-	} catch {
-		return { url, title: "", content: "", error: "Invalid URL" };
-	}
-
-	try {
 		const ghResult = await extractGitHub(url, signal, options?.forceClone);
 		if (ghResult) return ghResult;
 		if (signal?.aborted) return abortedResult(url);
@@ -479,6 +518,7 @@ async function extractViaHttp(
 	signal?: AbortSignal,
 	options?: ExtractOptions,
 ): Promise<ExtractedContent> {
+	validateUrl(url);
 	const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const activityId = activityMonitor.logStart({ type: "fetch", url });
 
