@@ -4,8 +4,12 @@ import { test } from "node:test";
 
 const extractorUrl = new URL("../pdf-extract.ts", import.meta.url).href;
 
+// Plain `node --test` has no TypeScript loader (Pi registers one at runtime).
+// tsx provides the transform for the spawned child to import .ts source.
+const TS_NODE_ARGS = ["--import", "tsx"];
+
 test("extractPDFToMarkdown works on Node 22 without native Promise.try", () => {
-  const child = spawnSync(process.execPath, ["--input-type=module"], {
+  const child = spawnSync(process.execPath, ["--input-type=module", ...TS_NODE_ARGS], {
     input: buildChildScript(extractorUrl),
     encoding: "utf8",
     maxBuffer: 2 * 1024 * 1024,

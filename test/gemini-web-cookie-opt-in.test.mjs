@@ -7,13 +7,17 @@ import { test } from "node:test";
 
 const moduleUrl = new URL("../gemini-web-config.ts", import.meta.url).href;
 
+// Plain `node --test` has no TypeScript loader (Pi registers one at runtime).
+// tsx provides the transform for the spawned child to import .ts source.
+const TS_NODE_ARGS = ["--import", "tsx"];
+
 function runCookieAccessCheck(home, extraEnv = {}) {
 	const env = { ...process.env, HOME: home, USERPROFILE: home, ...extraEnv };
 	delete env.PI_ALLOW_BROWSER_COOKIES;
 	delete env.FEYNMAN_ALLOW_BROWSER_COOKIES;
 	Object.assign(env, extraEnv);
 
-	return spawnSync(process.execPath, ["--input-type=module"], {
+	return spawnSync(process.execPath, ["--input-type=module", ...TS_NODE_ARGS], {
 		input: `const { isBrowserCookieAccessAllowed } = await import(${JSON.stringify(moduleUrl)}); console.log(String(isBrowserCookieAccessAllowed()));`,
 		encoding: "utf8",
 		env,

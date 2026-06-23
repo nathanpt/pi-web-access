@@ -4,7 +4,7 @@
   "description": "Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi coding agent",
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --import tsx --test"
   },
   "keywords": [
     "pi-package",
@@ -45,5 +45,8 @@
       "./skills"
     ],
     "video": "https://github.com/nathanpt/pi-web-access/raw/refs/heads/main/pi-web-fetch-demo.mp4"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.4"
   }
 }
