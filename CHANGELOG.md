@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Prevented `web_search` curator sessions from hanging indefinitely when the browser never connects or when a connected curator page keeps heartbeating but fails to submit after its idle timeout; the server now finalizes with the existing timeout fallback.
+- Prevented concurrent curated `web_search` calls from canceling or orphaning each other; additional concurrent searches now bypass browser review and return directly while one curator is active.
+- Improved in-terminal curator progress while waiting for summary approval by showing the curator URL, idle timeout, and reopen shortcut.
+
 ## [0.10.7] - 2026-05-02
 
 ### Added
