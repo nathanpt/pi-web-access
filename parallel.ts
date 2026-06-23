@@ -29,8 +29,7 @@ function loadConfig(): WebSearchConfig {
 		cachedConfig = JSON.parse(content) as WebSearchConfig;
 		return cachedConfig;
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
+		throw new Error(`Failed to parse ${CONFIG_PATH}: ${errorMessage(err)}`);
 	}
 }
 
@@ -38,6 +37,14 @@ function normalizeApiKey(value: unknown): string | null {
 	if (typeof value !== "string") return null;
 	const normalized = value.trim();
 	return normalized.length > 0 ? normalized : null;
+}
+
+function errorMessage(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}
+
+function isAbortError(err: unknown): boolean {
+	return errorMessage(err).toLowerCase().includes("abort");
 }
 
 function getApiKey(): string {
@@ -104,20 +111,23 @@ interface ParallelSearchResponse {
 	warnings?: Array<{ type?: string; message?: string }> | null;
 }
 
+/** Keep only non-empty string excerpts; tolerate non-array / mixed input from the API. */
+function nonEmptyExcerpts(excerpts: unknown): string[] {
+	if (!Array.isArray(excerpts)) return [];
+	return excerpts.filter((e): e is string => typeof e === "string" && e.trim().length > 0);
+}
+
 function buildAnswerFromResults(results: ParallelSearchResult[]): string {
-	const parts: string[] = [];
-	for (let i = 0; i < results.length; i++) {
-		const item = results[i];
-		if (!item?.url) continue;
-		const excerpts = Array.isArray(item.excerpts)
-			? item.excerpts.filter(e => typeof e === "string" && e.trim().length > 0)
-			: [];
-		const content = excerpts.join(" ").trim();
-		if (!content) continue;
-		const sourceTitle = item.title || `Source ${i + 1}`;
-		parts.push(`${content}\nSource: ${sourceTitle} (${item.url})`);
-	}
-	return parts.join("\n\n");
+	return results
+		.map((item, index) => {
+			if (!item?.url) return null;
+			const content = nonEmptyExcerpts(item.excerpts).join(" ").trim();
+			if (!content) return null;
+			const sourceTitle = item.title || `Source ${index + 1}`;
+			return `${content}\nSource: ${sourceTitle} (${item.url})`;
+		})
+		.filter((part): part is string => part !== null)
+		.join("\n\n");
 }
 
 export async function searchWithParallel(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
@@ -160,12 +170,8 @@ export async function searchWithParallel(query: string, options: SearchOptions =
 			signal: requestSignal(options.signal),
 		});
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
+		if (isAbortError(err)) activityMonitor.logComplete(activityId, 0);
+		else activityMonitor.logError(activityId, errorMessage(err));
 		throw err;
 	}
 
@@ -180,23 +186,17 @@ export async function searchWithParallel(query: string, options: SearchOptions =
 		data = await response.json() as ParallelSearchResponse;
 	} catch (err) {
 		activityMonitor.logComplete(activityId, response.status);
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Parallel API returned invalid JSON: ${message}`);
+		throw new Error(`Parallel API returned invalid JSON: ${errorMessage(err)}`);
 	}
 
 	activityMonitor.logComplete(activityId, response.status);
 
 	const results = Array.isArray(data.results) ? data.results : [];
-	const mapped = results.map((item, index) => {
-		const excerpts = Array.isArray(item?.excerpts)
-			? item.excerpts.filter(e => typeof e === "string" && e.trim().length > 0)
-			: [];
-		return {
-			title: item?.title || `Source ${index + 1}`,
-			url: item?.url || "",
-			snippet: excerpts.join(" ").trim().slice(0, 1000),
-		};
-	}).filter(item => item.url.length > 0);
+	const mapped = results.map((item, index) => ({
+		title: item?.title || `Source ${index + 1}`,
+		url: item?.url || "",
+		snippet: nonEmptyExcerpts(item?.excerpts).join(" ").trim().slice(0, 1000),
+	})).filter(item => item.url.length > 0);
 
 	return {
 		answer: buildAnswerFromResults(results),
@@ -221,7 +221,8 @@ interface ParallelExtractResponse {
 }
 
 function deriveTitle(url: string, fallback?: string | null): string {
-	if (fallback && fallback.trim()) return fallback.trim();
+	const trimmed = fallback?.trim();
+	if (trimmed) return trimmed;
 	try {
 		const last = new URL(url).pathname.split("/").filter(Boolean).pop();
 		return last || url;
@@ -249,13 +250,7 @@ export async function extractWithParallel(
 	options?: { prompt?: string },
 ): Promise<ExtractedContent | null> {
 	if (!isParallelAvailable()) return null;
-
-	let apiKey: string;
-	try {
-		apiKey = getApiKey();
-	} catch {
-		return null;
-	}
+	const apiKey = getApiKey();
 
 	const objective = options?.prompt?.trim();
 	const advancedSettings: Record<string, unknown> = {};
@@ -287,12 +282,8 @@ export async function extractWithParallel(
 			signal: requestSignal(signal),
 		});
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) {
-			activityMonitor.logComplete(activityId, 0);
-		} else {
-			activityMonitor.logError(activityId, message);
-		}
+		if (isAbortError(err)) activityMonitor.logComplete(activityId, 0);
+		else activityMonitor.logError(activityId, errorMessage(err));
 		return null;
 	}
 
@@ -305,9 +296,8 @@ export async function extractWithParallel(
 	try {
 		data = await response.json() as ParallelExtractResponse;
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
 		activityMonitor.logComplete(activityId, response.status);
-		activityMonitor.logError(activityId, `invalid JSON: ${message}`);
+		activityMonitor.logError(activityId, `invalid JSON: ${errorMessage(err)}`);
 		return null;
 	}
 
@@ -319,10 +309,7 @@ export async function extractWithParallel(
 	if (!result) return null;
 
 	const fullContent = typeof result.full_content === "string" ? result.full_content.trim() : "";
-	const excerpts = Array.isArray(result.excerpts)
-		? result.excerpts.filter(e => typeof e === "string" && e.trim().length > 0)
-		: [];
-	const content = fullContent || excerpts.join("\n\n").trim();
+	const content = fullContent || nonEmptyExcerpts(result.excerpts).join("\n\n").trim();
 	if (!content) return null;
 
 	return {
