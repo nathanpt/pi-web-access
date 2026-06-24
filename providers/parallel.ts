@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { activityMonitor } from "./activity.js";
+import { activityMonitor } from "../activity.js";
 import type { SearchOptions, SearchResponse } from "./perplexity.js";
-import type { ExtractedContent } from "./extract.js";
+import type { ExtractedContent } from "../extract.js";
 
 const PARALLEL_API_URL = "https://api.parallel.ai/v1/search";
 const PARALLEL_EXTRACT_URL = "https://api.parallel.ai/v1/extract";

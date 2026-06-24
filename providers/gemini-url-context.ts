@@ -1,7 +1,7 @@
-import { activityMonitor } from "./activity.js";
+import { activityMonitor } from "../activity.js";
 import { getApiKey, getVersionedApiBase, buildKeyParam, buildAuthHeaders, isGatewayConfigured, DEFAULT_MODEL } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
-import { extractHeadingTitle, type ExtractedContent } from "./extract.js";
+import { extractHeadingTitle, type ExtractedContent } from "../extract.js";
 
 const EXTRACTION_PROMPT = `Extract the complete readable content from this URL as clean markdown.
 Include the page title, all text content, code blocks, and tables.

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-const moduleUrl = new URL("../gemini-web-config.ts", import.meta.url).href;
+const moduleUrl = new URL("../providers/gemini-web-config.ts", import.meta.url).href;
 
 // Plain `node --test` has no TypeScript loader (Pi registers one at runtime).
 // tsx provides the transform for the spawned child to import .ts source.

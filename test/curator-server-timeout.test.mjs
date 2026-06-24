@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { access, unlink, writeFile } from "node:fs/promises";
 import { after, test } from "node:test";
 
-const curatorPageShim = new URL("../curator-page.js", import.meta.url);
+const curatorPageShim = new URL("../curator/curator-page.js", import.meta.url);
 let wroteCuratorPageShim = false;
 
 // The server enforces a >=5s floor before its no-browser/idle timeout fires
@@ -23,7 +23,7 @@ async function loadServer() {
 		wroteCuratorPageShim = true;
 	}
 
-	return import(`../curator-server.ts?test=${Date.now()}`);
+	return import(`../curator/curator-server.ts?test=${Date.now()}`);
 }
 
 after(async () => {

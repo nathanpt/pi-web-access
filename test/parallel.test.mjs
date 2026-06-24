@@ -24,7 +24,7 @@ import { describe, test } from "node:test";
 // and a MIN_USEFUL_CONTENT gate that we do not have, so those PR #91 tests are
 // intentionally not carried over.
 
-const parallelModuleUrl = new URL("../parallel.ts", import.meta.url).href;
+const parallelModuleUrl = new URL("../providers/parallel.ts", import.meta.url).href;
 
 // Plain `node --test` has no TypeScript loader (Pi registers one at runtime).
 // tsx provides the transform for the spawned child to import .ts source.
