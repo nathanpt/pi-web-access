@@ -4,10 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Added `GOOGLE_GEMINI_BASE_URL` env var and `geminiBaseUrl` config key to route Gemini API requests through a compatible gateway (e.g. Cloudflare AI Gateway, LiteLLM, Helicone). Matches the env var name used by the official Gemini CLI. Takes precedence: env var > config > Google default endpoint.
+- Added `CLOUDFLARE_API_KEY` env var and `cloudflareApiKey` config key for Cloudflare AI Gateway authentication (`cf-aig-authorization` header), matching how pi core handles the same gateway. Automatically activated when the configured host contains `gateway.ai.cloudflare.com`.
+
 ### Fixed
 - Prevented `web_search` curator sessions from hanging indefinitely when the browser never connects or when a connected curator page keeps heartbeating but fails to submit after its idle timeout; the server now finalizes with the existing timeout fallback.
 - Prevented concurrent curated `web_search` calls from canceling or orphaning each other; additional concurrent searches now bypass browser review and return directly while one curator is active.
 - Improved in-terminal curator progress while waiting for summary approval by showing the curator URL, idle timeout, and reopen shortcut.
+- Split `API_BASE` into `DEFAULT_API_HOST` + `API_VERSION` constants so gateway base URL overrides do not require users to include the version segment (`/v1beta`). `API_BASE` is kept as a deprecated export for backward compatibility.
+- Added `role: "user"` to all `contents[]` entries in `:generateContent` request bodies. Google's public endpoint defaults the role server-side, but Vertex AI-backed proxies reject requests without an explicit role.
+- Updated all four Gemini API call sites (`gemini-search.ts`, `gemini-url-context.ts`, `gemini-api.ts`, `video-extract.ts`) to use `getVersionedApiBase()` so gateway URL overrides take effect consistently.
 
 ## [0.10.7] - 2026-05-02
 
