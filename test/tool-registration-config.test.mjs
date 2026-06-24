@@ -8,7 +8,7 @@ import { test } from "node:test";
 
 const workflowSrc = readFileSync(new URL("../workflow.ts", import.meta.url), "utf8");
 const indexSrc = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
-const readmeSrc = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+const configDocSrc = readFileSync(new URL("../docs/configuration.md", import.meta.url), "utf8");
 
 test("WebSearchConfig declares the webSearch.enabled gate", () => {
 	assert.match(workflowSrc, /webSearch\?: \{\n\t\tenabled\?: boolean;\n\t\};/);
@@ -25,7 +25,7 @@ test("fetch tools remain registered outside the web_search gate", () => {
 	assert.ok(fetchIndex > gateIndex, "fetch_content registration should remain after the web_search gate");
 });
 
-test("README documents webSearch.enabled", () => {
-	assert.match(readmeSrc, /"webSearch": \{ "enabled": true \}/);
-	assert.match(readmeSrc, /webSearch\.enabled` to `false` to unregister the `web_search` tool/);
+test("configuration docs document webSearch.enabled", () => {
+	assert.match(configDocSrc, /"webSearch": \{ "enabled": true \}/);
+	assert.match(configDocSrc, /webSearch\.enabled` to `false` to unregister the `web_search` tool/);
 });

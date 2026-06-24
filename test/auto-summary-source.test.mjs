@@ -10,7 +10,8 @@ import { test } from "node:test";
 
 const workflowSrc = readFileSync(new URL("../workflow.ts", import.meta.url), "utf8");
 const indexSrc = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
-const readmeSrc = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+const toolsDocSrc = readFileSync(new URL("../docs/tools.md", import.meta.url), "utf8");
+const commandsDocSrc = readFileSync(new URL("../docs/commands.md", import.meta.url), "utf8");
 
 test("auto-summary is a recognized workflow value and bypasses the curator guards", () => {
 	assert.match(workflowSrc, /"none" \| "summary-review" \| "auto-summary"/);
@@ -33,7 +34,8 @@ test("/curator command accepts auto-summary", () => {
 	assert.match(indexSrc, /arg === "none" \|\| arg === "summary-review" \|\| arg === "auto-summary"/);
 });
 
-test("README documents auto-summary", () => {
-	assert.match(readmeSrc, /workflow: "auto-summary"/);
-	assert.match(readmeSrc, /generate a summary without opening the curator/);
+test("docs document auto-summary", () => {
+	// workflow param lives in docs/tools.md; the /curator blurb in docs/commands.md.
+	assert.match(toolsDocSrc, /workflow: "auto-summary"/);
+	assert.match(commandsDocSrc, /generate a summary without opening the curator/);
 });
