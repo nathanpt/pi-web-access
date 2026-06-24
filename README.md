@@ -104,6 +104,7 @@ web_search({ query: "...", provider: "parallel" })
 web_search({ query: "...", includeContent: true })
 web_search({ queries: ["query 1", "query 2"], workflow: "none" })
 web_search({ queries: ["query 1", "query 2"], workflow: "summary-review" })
+web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 ```
 
 | Parameter | Description |
@@ -114,7 +115,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "summary-review" })
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
 | `provider` | `auto` (default), `priority`, `exa`, `perplexity`, `gemini`, or `parallel` (opt-in; not part of auto/fallback). Use `priority` to honor the `providerPriority` order |
 | `includeContent` | Fetch full page content from sources in background |
-| `workflow` | `none` (skip curator) or `summary-review` (auto-generate summary draft after search completion, default unless `allowCurator` is false) |
+| `workflow` | `none` (skip curator), `summary-review` (auto-generate summary draft after search completion, default unless `allowCurator` is false), or `auto-summary` (generate a summary without opening the curator — works headless) |
 
 ### code_search
 
@@ -246,11 +247,12 @@ Toggle or configure the curator workflow at runtime.
 /curator on                 # enable curator (summary-review)
 /curator off                # disable curator (raw results only)
 /curator summary-review     # explicit workflow
+/curator auto-summary       # generate a summary without opening the curator
 /curator never              # hard-disable curator regardless of per-call workflow
 /curator allow              # allow curator again without enabling it
 ```
 
-Persists to `~/.pi/web-search.json` and takes effect on the next `web_search` call. When disabled, `web_search` returns raw results without opening the curator window. Set `"allowCurator": false` directly or run `/curator never` to hard-disable the browser curator, including per-call `workflow: "summary-review"` overrides and `/curator on`.
+Persists to `~/.pi/web-search.json` and takes effect on the next `web_search` call. When disabled, `web_search` returns raw results without opening the curator window. `auto-summary` never opens the browser, so it stays available even when the curator is hard-disabled — making `allowCurator: false` a headless mode that still produces model-generated summaries. Set `"allowCurator": false` directly or run `/curator never` to hard-disable the browser curator, including per-call `workflow: "summary-review"` overrides and `/curator on`.
 
 ### /search
 
@@ -291,6 +293,7 @@ All config lives in `~/.pi/web-search.json`. Every field is optional.
   "summaryModel": "anthropic/claude-haiku-4-5",
   "workflow": "summary-review",
   "allowCurator": true,
+  "webSearch": { "enabled": true },
   "curatorTimeoutSeconds": 20,
   "githubClone": {
     "enabled": true,
@@ -314,7 +317,7 @@ All config lives in `~/.pi/web-search.json`. Every field is optional.
 }
 ```
 
-`EXA_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `PARALLEL_API_KEY`, `GOOGLE_GEMINI_BASE_URL`, and `CLOUDFLARE_API_KEY` env vars take precedence over config file values. `GOOGLE_GEMINI_BASE_URL` overrides the Gemini API host for all Gemini calls (search, URL context, video) — set it to a bare host with no trailing slash and no version segment (e.g. `https://my-gateway.example.com/gemini`), matching the [official Gemini CLI convention](https://www.geminicli.com/docs/reference/configuration). `geminiBaseUrl` in config is the equivalent file-based override. When the configured host contains `gateway.ai.cloudflare.com`, authentication automatically switches to `cf-aig-authorization: Bearer <token>` using `CLOUDFLARE_API_KEY` (or `cloudflareApiKey` in config), and no `GEMINI_API_KEY` is required. Note: video file upload always goes to Google's upload endpoint directly; gateway users without a `GEMINI_API_KEY` will fall back to Gemini Web for video extraction. `provider` sets the default search provider: `"auto"` (default), `"priority"`, `"exa"`, `"perplexity"`, `"gemini"`, or `"parallel"`. This is also updated automatically when you change the provider in the curator UI. `providerPriority` (an array of provider names, e.g. `["perplexity", "exa", "gemini"]`) sets the order tried when `provider` is `"priority"`; unknown names, duplicates, and the meta-values `"auto"`/`"priority"` are dropped. If unset or empty, `"priority"` falls back to the built-in `auto` order. The `parallel` provider is opt-in: it must be selected explicitly via the `provider` parameter or config and is not included in `auto` selection or fallback ordering (though you may list it in `providerPriority`); it requires a Parallel API key (`parallelApiKey` or `PARALLEL_API_KEY`). `workflow` sets the default curator mode: `"summary-review"` (default, opens curator with auto-generated summary draft) or `"none"` (raw results, no curator). Overridden per-call via the `workflow` parameter on `web_search`, or toggled at runtime with `/curator`. Set `allowCurator` to `false` to force raw results even if a tool call asks for `workflow: "summary-review"`; when false, `/curator on` is rejected and the tool schema only advertises `workflow: "none"`. `chromeProfile` overrides the Chromium profile directory used for Gemini Web cookie lookup. `allowBrowserCookies` enables Chromium cookie extraction for Gemini Web; it defaults to `false` to avoid surprise macOS Keychain prompts. You can also set `PI_ALLOW_BROWSER_COOKIES=1`. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults. `summaryModel` sets the default model used for generating summary drafts in the curator UI (e.g. `"anthropic/claude-haiku-4-5"` or `"openai-codex/gpt-5.3-codex-spark"`). Only models available in your model registry are eligible; if the configured model is unavailable, the default falls back to the built-in preference list. `curatorTimeoutSeconds` controls the initial curator idle timeout (default `20`, max `600`); users can still adjust the timer in the curator UI.
+`EXA_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `PARALLEL_API_KEY`, `GOOGLE_GEMINI_BASE_URL`, and `CLOUDFLARE_API_KEY` env vars take precedence over config file values. `GOOGLE_GEMINI_BASE_URL` overrides the Gemini API host for all Gemini calls (search, URL context, video) — set it to a bare host with no trailing slash and no version segment (e.g. `https://my-gateway.example.com/gemini`), matching the [official Gemini CLI convention](https://www.geminicli.com/docs/reference/configuration). `geminiBaseUrl` in config is the equivalent file-based override. When the configured host contains `gateway.ai.cloudflare.com`, authentication automatically switches to `cf-aig-authorization: Bearer <token>` using `CLOUDFLARE_API_KEY` (or `cloudflareApiKey` in config), and no `GEMINI_API_KEY` is required. Note: video file upload always goes to Google's upload endpoint directly; gateway users without a `GEMINI_API_KEY` will fall back to Gemini Web for video extraction. `provider` sets the default search provider: `"auto"` (default), `"priority"`, `"exa"`, `"perplexity"`, `"gemini"`, or `"parallel"`. This is also updated automatically when you change the provider in the curator UI. `providerPriority` (an array of provider names, e.g. `["perplexity", "exa", "gemini"]`) sets the order tried when `provider` is `"priority"`; unknown names, duplicates, and the meta-values `"auto"`/`"priority"` are dropped. If unset or empty, `"priority"` falls back to the built-in `auto` order. The `parallel` provider is opt-in: it must be selected explicitly via the `provider` parameter or config and is not included in `auto` selection or fallback ordering (though you may list it in `providerPriority`); it requires a Parallel API key (`parallelApiKey` or `PARALLEL_API_KEY`). `workflow` sets the default curator mode: `"summary-review"` (default, opens curator with auto-generated summary draft), `"auto-summary"` (generates a summary without opening the curator — works headless / in `-p` mode), or `"none"` (raw results, no curator). Overridden per-call via the `workflow` parameter on `web_search`, or toggled at runtime with `/curator`. Set `allowCurator` to `false` to force raw results even if a tool call asks for `workflow: "summary-review"`; when false, `/curator on` is rejected and the tool schema only advertises `workflow: "none"` and `"auto-summary"` (auto-summary never opens the browser, so it remains available as a headless summary path). Set `webSearch.enabled` to `false` to unregister the `web_search` tool entirely (the `fetch_content`, `get_search_content`, and `code_search` tools remain available); defaults to `true`. `chromeProfile` overrides the Chromium profile directory used for Gemini Web cookie lookup. `allowBrowserCookies` enables Chromium cookie extraction for Gemini Web; it defaults to `false` to avoid surprise macOS Keychain prompts. You can also set `PI_ALLOW_BROWSER_COOKIES=1`. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults. `summaryModel` sets the default model used for generating summary drafts in the curator UI (e.g. `"anthropic/claude-haiku-4-5"` or `"openai-codex/gpt-5.3-codex-spark"`). Only models available in your model registry are eligible; if the configured model is unavailable, the default falls back to the built-in preference list. `curatorTimeoutSeconds` controls the initial curator idle timeout (default `20`, max `600`); users can still adjust the timer in the curator UI.
 
 ### Shortcuts
 
@@ -382,7 +385,7 @@ upstream commits or PRs, please cite the original author's work.
 | `activity.ts` | Activity tracking for the observability widget |
 | `storage.ts` | Session-aware result storage (powers `get_search_content`) |
 | `utils.ts` | Shared formatting and error helpers |
-| `workflow.ts` | Curator workflow resolution (`/curator` on/off/none) |
+| `workflow.ts` | Curator workflow resolution (`/curator` on/off/none/auto-summary) |
 | `chrome-cookies.ts` | macOS/Linux Chromium-based cookie extraction (Keychain/secret-tool + SQLite) |
 | `providers/exa.ts` | Exa.ai search provider — direct API and MCP proxy, budget tracking |
 | `providers/perplexity.ts` | Perplexity API client with rate limiting |
