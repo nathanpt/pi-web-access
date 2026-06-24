@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Box, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
-import { StringEnum, complete, getModel, type Model } from "@mariozechner/pi-ai";
+import { StringEnum, complete, type Model } from "@mariozechner/pi-ai";
 import pLimit from "p-limit";
 import { fetchAllContent, type ExtractedContent } from "./extract.js";
 import { normalizeFetchContentParams } from "./fetch-params.js";
@@ -29,6 +29,7 @@ import {
 	type SummaryGenerationContext,
 	type SummaryMeta,
 } from "./curator/summary-review.js";
+import { loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "./summary-model-scope.js";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -583,13 +584,14 @@ export default function (pi: ExtensionAPI) {
 		ctx: SummaryGenerationContext,
 		candidates: Array<{ provider: string; id: string }>,
 	): Promise<{ model: Model; apiKey: string; headers?: Record<string, string> }> {
+		const enabledModelPatterns = loadEnabledModelPatterns(ctx);
 		for (const { provider, id } of candidates) {
-			const model = getModel(provider, id);
-			if (!model) continue;
+			const model = ctx.modelRegistry.find(provider, id);
+			if (!model || !modelMatchesEnabledPatterns(model, enabledModelPatterns)) continue;
 			const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
 			if (auth.ok && auth.apiKey) return { model, apiKey: auth.apiKey, headers: auth.headers };
 		}
-		throw new Error(`No model available: ${candidates.map(c => `${c.provider}/${c.id}`).join(", ")}`);
+		throw new Error(`No enabled model available: ${candidates.map(c => `${c.provider}/${c.id}`).join(", ")}`);
 	}
 
 	async function rewriteSearchQuery(query: string, ctx: SummaryGenerationContext, signal: AbortSignal): Promise<string> {
@@ -669,14 +671,19 @@ export default function (pi: ExtensionAPI) {
 			summaryModels.push({ value, label: value });
 		};
 
+		let enabledModelPatterns: string[] | null = null;
+		let scopeLoaded = true;
 		try {
+			enabledModelPatterns = loadEnabledModelPatterns(summaryContext);
 			const availableModels = summaryContext.modelRegistry.getAvailable();
 			for (const model of availableModels) {
+				if (!modelMatchesEnabledPatterns(model, enabledModelPatterns)) continue;
 				const value = `${model.provider}/${model.id}`;
 				availableValues.add(value);
 				addModel(model.provider, model.id);
 			}
 		} catch (err) {
+			scopeLoaded = false;
 			const message = err instanceof Error ? err.message : String(err);
 			console.error(`Failed to load summary models: ${message}`);
 		}
@@ -684,7 +691,7 @@ export default function (pi: ExtensionAPI) {
 		const currentModelValue = summaryContext.model
 			? `${summaryContext.model.provider}/${summaryContext.model.id}`
 			: null;
-		if (summaryContext.model && currentModelValue && !seen.has(currentModelValue)) {
+		if (scopeLoaded && summaryContext.model && currentModelValue && !seen.has(currentModelValue) && modelMatchesEnabledPatterns(summaryContext.model, enabledModelPatterns)) {
 			addModel(summaryContext.model.provider, summaryContext.model.id);
 		}
 
@@ -707,7 +714,7 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 		}
-		if (!defaultSummaryModel && summaryModels.length > 0) {
+		if (!defaultSummaryModel && summaryModels.length > 0 && scopeLoaded) {
 			defaultSummaryModel = summaryModels[0].value;
 		}
 
@@ -1180,6 +1187,8 @@ export default function (pi: ExtensionAPI) {
 					const summaryContext: SummaryGenerationContext = {
 						model: ctx.model,
 						modelRegistry: ctx.modelRegistry,
+						cwd: ctx.cwd,
+						isProjectTrusted: () => ctx.isProjectTrusted(),
 					};
 					const summaryModelChoices = await loadSummaryModelChoices(summaryContext);
 
@@ -1372,6 +1381,8 @@ export default function (pi: ExtensionAPI) {
 				const summaryContext: SummaryGenerationContext = {
 					model: ctx.model,
 					modelRegistry: ctx.modelRegistry,
+					cwd: ctx.cwd,
+					isProjectTrusted: () => ctx.isProjectTrusted(),
 				};
 				const summaryModelChoices = await loadSummaryModelChoices(summaryContext);
 				const generated = await generateSummaryDraft(searchResults, summaryContext, signal, summaryModelChoices.defaultSummaryModel ?? undefined);
@@ -2094,6 +2105,8 @@ export default function (pi: ExtensionAPI) {
 			const summaryContext: SummaryGenerationContext = {
 				model: ctx.model,
 				modelRegistry: ctx.modelRegistry,
+				cwd: ctx.cwd,
+				isProjectTrusted: () => ctx.isProjectTrusted(),
 			};
 			const summaryModelChoices = await loadSummaryModelChoices(summaryContext);
 
