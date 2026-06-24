@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import type { ExtractedContent } from "./extract.js";
+import type { ExtractedContent } from "../extract.js";
 import type { GitHubUrlInfo } from "./github-extract.js";
 
 const MAX_TREE_ENTRIES = 200;

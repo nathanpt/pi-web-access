@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { activityMonitor } from "./activity.js";
-import type { ExtractedContent } from "./extract.js";
+import { activityMonitor } from "../activity.js";
+import type { ExtractedContent } from "../extract.js";
 import type { SearchOptions, SearchResponse } from "./perplexity.js";
 
 const EXA_ANSWER_URL = "https://api.exa.ai/answer";

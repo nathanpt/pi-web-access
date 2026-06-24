@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
-const extractorUrl = new URL("../pdf-extract.ts", import.meta.url).href;
+const extractorUrl = new URL("../extractors/pdf-extract.ts", import.meta.url).href;
 
 // Plain `node --test` has no TypeScript loader (Pi registers one at runtime).
 // tsx provides the transform for the spawned child to import .ts source.

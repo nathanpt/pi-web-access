@@ -378,29 +378,30 @@ upstream commits or PRs, please cite the original author's work.
 | File | Purpose |
 |------|---------|
 | `index.ts` | Extension entry, tool definitions, commands, widget |
-| `curator-page.ts` | HTML/CSS/JS generation for the curator UI with markdown rendering |
-| `curator-server.ts` | Ephemeral HTTP server with SSE streaming and state machine |
-| `summary-review.ts` | Summary prompt construction, model-based draft generation, and deterministic fallback summary |
-| `exa.ts` | Exa.ai search provider — direct API and MCP proxy, budget tracking |
-| `parallel.ts` | Parallel search provider — `api.parallel.ai` web search, `provider: "parallel"` (opt-in) |
-| `code-search.ts` | Code/docs search via Exa MCP |
 | `extract.ts` | URL/file path routing, HTTP extraction, fallback orchestration |
-| `gemini-search.ts` | Search routing across Exa, Perplexity, Gemini API, Gemini Web |
-| `gemini-url-context.ts` | Gemini URL Context + Web extraction fallbacks |
-| `gemini-web.ts` | Gemini Web client (cookie auth, StreamGenerate) |
-| `gemini-web-config.ts` | Gemini Web profile and browser-cookie opt-in config |
-| `gemini-api.ts` | Gemini REST API client (generateContent) |
-| `chrome-cookies.ts` | macOS/Linux Chromium-based cookie extraction (Keychain/secret-tool + SQLite) |
-| `youtube-extract.ts` | YouTube detection, three-tier extraction, frame extraction |
-| `video-extract.ts` | Local video detection, Files API upload, Gemini analysis |
-| `github-extract.ts` | GitHub URL parsing, clone cache, content generation |
-| `github-api.ts` | GitHub API fallback for large repos and commit SHAs |
-| `perplexity.ts` | Perplexity API client with rate limiting |
-| `pdf-extract.ts` | PDF text extraction, saves to markdown |
-| `rsc-extract.ts` | RSC flight data parser for Next.js pages |
-| `utils.ts` | Shared formatting and error helpers |
-| `storage.ts` | Session-aware result storage |
 | `activity.ts` | Activity tracking for the observability widget |
+| `storage.ts` | Session-aware result storage (powers `get_search_content`) |
+| `utils.ts` | Shared formatting and error helpers |
+| `workflow.ts` | Curator workflow resolution (`/curator` on/off/none) |
+| `chrome-cookies.ts` | macOS/Linux Chromium-based cookie extraction (Keychain/secret-tool + SQLite) |
+| `providers/exa.ts` | Exa.ai search provider — direct API and MCP proxy, budget tracking |
+| `providers/perplexity.ts` | Perplexity API client with rate limiting |
+| `providers/parallel.ts` | Parallel search provider — `api.parallel.ai` web search, `provider: "parallel"` (opt-in) |
+| `providers/gemini-search.ts` | Search routing across Exa, Perplexity, Gemini API, Gemini Web |
+| `providers/gemini-api.ts` | Gemini REST API client (generateContent) |
+| `providers/gemini-web.ts` | Gemini Web client (cookie auth, StreamGenerate) |
+| `providers/gemini-web-config.ts` | Gemini Web profile and browser-cookie opt-in config |
+| `providers/gemini-url-context.ts` | Gemini URL Context + Web extraction fallbacks |
+| `providers/code-search.ts` | Code/docs search via Exa MCP |
+| `extractors/github-extract.ts` | GitHub URL parsing, clone cache, content generation |
+| `extractors/github-api.ts` | GitHub API fallback for large repos and commit SHAs |
+| `extractors/youtube-extract.ts` | YouTube detection, three-tier extraction, frame extraction |
+| `extractors/video-extract.ts` | Local video detection, Files API upload, Gemini analysis |
+| `extractors/pdf-extract.ts` | PDF text extraction, saves to markdown |
+| `extractors/rsc-extract.ts` | RSC flight data parser for Next.js pages |
+| `curator/curator-page.ts` | HTML/CSS/JS generation for the curator UI with markdown rendering |
+| `curator/curator-server.ts` | Ephemeral HTTP server with SSE streaming and state machine |
+| `curator/summary-review.ts` | Summary prompt construction, model-based draft generation, and deterministic fallback summary |
 | `skills/librarian/` | Bundled skill for library research |
 
 </details>

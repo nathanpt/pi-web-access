@@ -4,10 +4,10 @@ import { Type } from "typebox";
 import { StringEnum, complete, getModel, type Model } from "@mariozechner/pi-ai";
 import pLimit from "p-limit";
 import { fetchAllContent, type ExtractedContent } from "./extract.js";
-import { clearCloneCache } from "./github-extract.js";
-import { search, type SearchProvider, type ResolvedSearchProvider } from "./gemini-search.js";
-import { executeCodeSearch } from "./code-search.js";
-import type { SearchResult } from "./perplexity.js";
+import { clearCloneCache } from "./extractors/github-extract.js";
+import { search, type SearchProvider, type ResolvedSearchProvider } from "./providers/gemini-search.js";
+import { executeCodeSearch } from "./providers/code-search.js";
+import type { SearchResult } from "./providers/perplexity.js";
 import { formatSeconds } from "./utils.js";
 import {
 	clearResults,
@@ -21,23 +21,23 @@ import {
 	type StoredSearchData,
 } from "./storage.js";
 import { activityMonitor, type ActivityEntry } from "./activity.js";
-import { startCuratorServer, type CuratorServerHandle } from "./curator-server.js";
+import { startCuratorServer, type CuratorServerHandle } from "./curator/curator-server.js";
 import {
 	buildDeterministicSummary,
 	generateSummaryDraft,
 	type SummaryGenerationContext,
 	type SummaryMeta,
-} from "./summary-review.js";
+} from "./curator/summary-review.js";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { platform, homedir } from "node:os";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { isPerplexityAvailable } from "./perplexity.js";
-import { isExaAvailable } from "./exa.js";
-import { isGeminiApiAvailable } from "./gemini-api.js";
-import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.js";
+import { isPerplexityAvailable } from "./providers/perplexity.js";
+import { isExaAvailable } from "./providers/exa.js";
+import { isGeminiApiAvailable } from "./providers/gemini-api.js";
+import { getActiveGoogleEmail, isGeminiWebAvailable } from "./providers/gemini-web.js";
 import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
 import {
 	getWorkflowValues,

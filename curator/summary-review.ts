@@ -1,6 +1,6 @@
 import { complete, getModel, type Message, type Model } from "@mariozechner/pi-ai";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { QueryResultData } from "./storage.js";
+import type { QueryResultData } from "../storage.js";
 
 const PREFERRED_SUMMARY_MODELS = [
 	{ provider: "anthropic", id: "claude-haiku-4-5" },

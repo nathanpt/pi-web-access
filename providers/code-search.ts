@@ -1,4 +1,4 @@
-import { activityMonitor } from "./activity.js";
+import { activityMonitor } from "../activity.js";
 import { callExaMcp } from "./exa.js";
 
 const CODE_CONTEXT_TOOL = "get_code_context_exa";
