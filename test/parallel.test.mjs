@@ -64,6 +64,10 @@ async function writeWebSearchConfig(home, config) {
 // then run an inline ESM script that imports the real parallel.ts under tsx.
 function runWithHome(home, script, extraEnv = {}) {
 	const env = { ...process.env, HOME: home, USERPROFILE: home };
+	// The config helper prefers PI_CODING_AGENT_DIR / XDG_CONFIG_HOME over HOME;
+	// clear them so the temp HOME's ~/.pi is the resolved config dir.
+	delete env.PI_CODING_AGENT_DIR;
+	delete env.XDG_CONFIG_HOME;
 	delete env.PARALLEL_API_KEY;
 	Object.assign(env, extraEnv);
 

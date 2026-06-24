@@ -53,6 +53,10 @@ ${script}
 
 function runWithHome(home, script, extraEnv = {}) {
 	const env = { ...process.env, HOME: home, USERPROFILE: home };
+	// The config helper prefers PI_CODING_AGENT_DIR / XDG_CONFIG_HOME over HOME;
+	// clear them so the temp HOME's ~/.pi is the resolved config dir.
+	delete env.PI_CODING_AGENT_DIR;
+	delete env.XDG_CONFIG_HOME;
 	// Strip any inherited provider keys so availability is fully controlled
 	// by this test's env/config.
 	for (const key of [
