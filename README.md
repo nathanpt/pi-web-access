@@ -23,13 +23,32 @@ https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 
 ## Why Pi Web Access
 
-**Zero Config** — Works out of the box with Exa MCP (no API key needed). Add API keys for Exa, Perplexity, or Gemini API for more control, or opt into browser-cookie access for Gemini Web.
+**Zero Config** — Works out of the box with Exa MCP (no API key needed). Add API keys for Exa, Perplexity, Gemini API, or Parallel for more control, or opt into browser-cookie access for Gemini Web.
 
 **Video Understanding** — Point it at a YouTube video or local screen recording and ask questions about what's on screen. Full transcripts, visual descriptions, and frame extraction at exact timestamps.
 
-**Smart Fallbacks** — Every capability has a fallback chain. Search tries Exa, then Perplexity, then Gemini API, then Gemini Web when browser cookies are enabled. YouTube tries Gemini Web when enabled, then API, then Perplexity. Blocked pages retry through Jina Reader and Gemini extraction. Something always works.
+**Smart Fallbacks** — Every capability has a fallback chain, so something always works. Search tries Exa (direct API if keyed, MCP if not), then Perplexity, then Gemini API, then Gemini Web when browser cookies are enabled — or define your **own order** with `provider: "priority"`. YouTube tries Gemini Web → API → Perplexity. Blocked pages retry through Jina Reader and Gemini extraction.
+
+**Headless-Friendly** — `workflow: "auto-summary"` generates a model summary inline without ever opening a browser, so it works in `-p` / CI / SSH sessions. Pair with `allowCurator: false` for a fully headless setup.
+
+**Billing Safety** — Curator summaries respect Pi's `enabledModels` allowlist when configured, and fall back to a deterministic no-billing summary instead of charging you for an unrelated catalog model.
 
 **GitHub Cloning** — GitHub URLs are cloned locally instead of scraped. The agent gets real file contents and a local path to explore, not rendered HTML.
+
+### Features at a glance
+
+| Capability | What you get |
+| --- | --- |
+| 🔍 **Web search** | Exa (zero-config MCP) · Perplexity · Gemini (API + browser-cookie Web) · Parallel — with a fallback chain or your own `providerPriority` order |
+| 📄 **Content fetch** | Readability + RSC + Jina Reader + Gemini extraction, GitHub clone, PDF text, SSRF-safe |
+| 🎥 **Video understanding** | YouTube transcripts & visual Q&A, local-video frame extraction at timestamps |
+| 🧠 **Headless summaries** | `auto-summary` workflow — model summaries without the browser curator |
+| ⚙️ **Provider control** | `provider: "priority"` + `providerPriority` list to set the exact try-order |
+| 🛡️ **Billing safety** | Summaries honor `enabledModels`; deterministic fallback when none is enabled |
+| 📁 **XDG config** | `PI_CODING_AGENT_DIR` → `XDG_CONFIG_HOME/pi` → `~/.pi` |
+| 🔌 **Bring your own gateway** | `GOOGLE_GEMINI_BASE_URL` + Cloudflare AI Gateway / LiteLLM / Helicone routing |
+
+See [Tools](#tools), [Capabilities](#capabilities), and [Configuration](#configuration) for the full surface area. Built by [Nico Bailon](https://github.com/nicobailon) (original) and [Nathan Peet](https://github.com/nathanpt) (this fork) — see [Contributors](CONTRIBUTORS.md).
 
 ## Install
 
@@ -372,7 +391,8 @@ unactioned since 5/4/26**.
 Contributions (fixes, features, cherry-picked upstream PRs) are welcome as PRs
 against **this fork**. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the
 development setup, test conventions, the cherry-pick-with-attribution workflow,
-and how outstanding upstream PRs are being merged here. When referencing
+and how outstanding upstream PRs are being merged here. Contributors are listed
+in **[CONTRIBUTORS.md](CONTRIBUTORS.md)**. When referencing
 upstream commits or PRs, please cite the original author's work.
 
 <details>
