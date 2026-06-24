@@ -34,7 +34,8 @@ merged upstream PR so far) is:
    the maintainer is the *committer*. The commit body cites the upstream PR
    number and author. We never claim someone else's work.
 4. **CI gate.** Push the branch, open a PR, and wait for green.
-5. **Merge** as a merge commit (see [Merging](#merging) below).
+5. **Open a PR**; once CI is green, the maintainer merges it (as a merge
+   commit, so the original author's commits stay attributed).
 
 If you have an open PR on upstream, the fastest way to see it land here is to
 **open an issue** on this fork linking to it with a one-line "why this matters."
@@ -50,10 +51,11 @@ npm install          # installs devDependencies (tsx); runtime deps are small
 npm test             # node --import tsx --test  (Node 22+)
 ```
 
-Then load the extension into Pi from your local checkout:
+Then load the extension into Pi from the repo directory (picks up your edits
+each run):
 
 ```bash
-pi -e /path/to/pi-web-access
+pi -e .
 ```
 
 > **Do not** install via `pi install npm:pi-web-access` — that pulls the
@@ -137,27 +139,9 @@ When changing code, respect the patterns that make this extension reliable:
 - **Attribution is non-negotiable for upstream work.** If your PR ports or
   adapts someone else's code, say so in the commit body and PR description, and
   keep the original author attributed where the commits are crafted. For
-  original work authored entirely by you, standard attribution applies.
-
-### Merging
-
-The merge workflow reflects the reality of a **solo-maintainer fork**:
-
-- PRs merge as **merge commits** (not squash, not rebase), preserving the full
-  commit history and attribution.
-- A residual review requirement that has no normal bypass is satisfied via
-  admin override:
-
-  ```bash
-  gh pr merge <PR> --merge --admin --delete-branch
-  ```
-
-- Commit signing is **not** required of contributors. The repo's signature
-  rule was relaxed (it had blocked even admin merges); what remains enforced are
-  only the genuinely valuable guards — no force-push and no branch deletion.
-
-If you're an outside contributor, you don't need to worry about any of this —
-just open the PR and the maintainer handles the merge.
+  original work authored entirely by you, standard attribution applies. PRs are
+  merged as merge commits (not squashed), so commits and attribution are
+  preserved in history.
 
 ## Reporting bugs and requesting features
 
