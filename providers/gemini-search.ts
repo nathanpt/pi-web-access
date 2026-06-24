@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { getWebSearchConfigPath } from "../utils.js";
 import { activityMonitor } from "../activity.js";
 import { getApiKey, getVersionedApiBase, buildKeyParam, buildAuthHeaders, isGatewayConfigured, isGeminiApiAvailable, DEFAULT_MODEL } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
@@ -32,7 +31,7 @@ export interface AttributedSearchResponse extends SearchResponse {
 	provider: ResolvedSearchProvider;
 }
 
-const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
+const CONFIG_PATH = getWebSearchConfigPath();
 
 export interface SearchConfig {
 	searchProvider: SearchProvider;
@@ -169,7 +168,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		if (result) return { ...result, provider: "gemini" };
 		throw new Error(
 			"Gemini search unavailable. Either:\n" +
-			"  1. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
+			`  1. Set GEMINI_API_KEY in ${CONFIG_PATH}\n` +
 			"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
 			"  3. Sign into gemini.google.com in a supported Chromium-based browser"
 		);
@@ -224,9 +223,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 
 	throw new Error(
 		"No search provider available. Either:\n" +
-		"  1. Set perplexityApiKey in ~/.pi/web-search.json\n" +
-		"  2. Set EXA_API_KEY (or exaApiKey) in ~/.pi/web-search.json\n" +
-		"  3. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
+		`  1. Set perplexityApiKey in ${CONFIG_PATH}\n` +
+		`  2. Set EXA_API_KEY (or exaApiKey) in ${CONFIG_PATH}\n` +
+		`  3. Set GEMINI_API_KEY in ${CONFIG_PATH}\n` +
 		"  4. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
 		"  5. Sign into gemini.google.com in a supported Chromium-based browser"
 	);
