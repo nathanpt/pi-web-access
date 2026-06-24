@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { getWebSearchConfigPath } from "../utils.js";
 
 const DEFAULT_API_HOST = "https://generativelanguage.googleapis.com";
 const API_VERSION = "v1beta";
@@ -9,7 +8,7 @@ const API_VERSION = "v1beta";
  * Kept for backward compatibility with external imports.
  */
 export const API_BASE = `${DEFAULT_API_HOST}/${API_VERSION}`;
-const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
+const CONFIG_PATH = getWebSearchConfigPath();
 export const DEFAULT_MODEL = "gemini-3-flash-preview";
 
 interface GeminiApiConfig {
@@ -156,7 +155,7 @@ export async function queryGeminiApiWithVideo(
 	const apiKey = getApiKey();
 	if (!apiKey && !isGatewayConfigured()) throw new Error(
 		"Gemini API not configured. Either:\n" +
-		"  1. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
+		`  1. Set GEMINI_API_KEY in ${CONFIG_PATH}\n` +
 		"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing"
 	);
 

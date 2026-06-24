@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { getWebSearchConfigPath } from "../utils.js";
 import { activityMonitor } from "../activity.js";
 import type { SearchOptions, SearchResponse } from "./perplexity.js";
 import type { ExtractedContent } from "../extract.js";
@@ -9,7 +8,7 @@ const PARALLEL_API_URL = "https://api.parallel.ai/v1/search";
 const PARALLEL_EXTRACT_URL = "https://api.parallel.ai/v1/extract";
 // Explicit excerpt budget so synthesized search answers have enough context.
 const SEARCH_MAX_CHARS_TOTAL = 40000;
-const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
+const CONFIG_PATH = getWebSearchConfigPath();
 
 interface WebSearchConfig {
 	parallelApiKey?: unknown;

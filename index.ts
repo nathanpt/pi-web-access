@@ -9,7 +9,7 @@ import { clearCloneCache } from "./extractors/github-extract.js";
 import { search, type SearchProvider, type ResolvedSearchProvider } from "./providers/gemini-search.js";
 import { executeCodeSearch } from "./providers/code-search.js";
 import type { SearchResult } from "./providers/perplexity.js";
-import { formatSeconds } from "./utils.js";
+import { formatSeconds, getWebSearchConfigDir, getWebSearchConfigPath } from "./utils.js";
 import {
 	clearResults,
 	deleteResult,
@@ -32,7 +32,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { platform, homedir } from "node:os";
+import { platform } from "node:os";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { isPerplexityAvailable } from "./providers/perplexity.js";
@@ -48,7 +48,7 @@ import {
 	type WebSearchWorkflow,
 } from "./workflow.js";
 
-const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
+const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
 
 interface ProviderAvailability {
 	perplexity: boolean;
@@ -88,7 +88,7 @@ function saveConfig(updates: Partial<WebSearchConfig>): void {
 	}
 
 	Object.assign(config, updates);
-	const dir = join(homedir(), ".pi");
+	const dir = getWebSearchConfigDir();
 	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 	writeFileSync(WEB_SEARCH_CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
 }

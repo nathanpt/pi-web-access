@@ -276,7 +276,7 @@ Toggle with **Ctrl+Shift+W** to see live request/response activity:
 
 ## Configuration
 
-All config lives in `~/.pi/web-search.json`. Every field is optional.
+All config lives in `web-search.json`, resolved with XDG precedence: `$PI_CODING_AGENT_DIR` → `$XDG_CONFIG_HOME/pi` → `~/.pi` (i.e. `~/.pi/web-search.json` by default, matching pi-core). Every field is optional.
 
 ```json
 {
