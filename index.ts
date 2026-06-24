@@ -111,7 +111,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini" || normalized === "parallel") {
+	if (normalized === "auto" || normalized === "priority" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini" || normalized === "parallel") {
 		return normalized;
 	}
 	return "auto";
@@ -163,7 +163,10 @@ function resolveProvider(
 ): ResolvedSearchProvider {
 	const provider = normalizeProviderInput(requested ?? loadConfig().provider ?? "auto") ?? "auto";
 
-	if (provider === "auto") {
+	if (provider === "auto" || provider === "priority") {
+		// Display-only default for the curator UI. `priority` mode still routes
+		// through the configured providerPriority order at search time; here we
+		// just pick the first available built-in provider for the selector.
 		if (available.exa) return "exa";
 		if (available.perplexity) return "perplexity";
 		if (available.gemini) return "gemini";
@@ -1109,7 +1112,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-				StringEnum(["auto", "perplexity", "gemini", "exa", "parallel"], { description: "Search provider (default: auto)" }),
+				StringEnum(["auto", "priority", "perplexity", "gemini", "exa", "parallel"], { description: "Search provider (default: auto). Use 'priority' to honor the configured providerPriority order." }),
 			),
 			workflow: Type.Optional(
 				StringEnum(workflowValues, {

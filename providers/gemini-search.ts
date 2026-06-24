@@ -2,14 +2,31 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { activityMonitor } from "../activity.js";
-import { getApiKey, getVersionedApiBase, buildKeyParam, buildAuthHeaders, isGatewayConfigured, DEFAULT_MODEL } from "./gemini-api.js";
+import { getApiKey, getVersionedApiBase, buildKeyParam, buildAuthHeaders, isGatewayConfigured, isGeminiApiAvailable, DEFAULT_MODEL } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
-import { searchWithParallel } from "./parallel.js";
+import { isParallelAvailable, searchWithParallel } from "./parallel.js";
 
-export type SearchProvider = "auto" | "perplexity" | "gemini" | "exa" | "parallel";
-export type ResolvedSearchProvider = Exclude<SearchProvider, "auto">;
+export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel";
+export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority">;
+
+/**
+ * Built-in order used by `provider: "auto"` and as the fallback when
+ * `provider: "priority"` is selected but no `providerPriority` list is
+ * configured. `parallel` is intentionally NOT here (opt-in only; see
+ * ROADMAP item #2).
+ */
+const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "perplexity", "gemini"];
+
+const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel"]);
+
+const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
+	exa: "Exa",
+	perplexity: "Perplexity",
+	gemini: "Gemini",
+	parallel: "Parallel",
+};
 
 export interface AttributedSearchResponse extends SearchResponse {
 	provider: ResolvedSearchProvider;
@@ -17,12 +34,41 @@ export interface AttributedSearchResponse extends SearchResponse {
 
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 
-let cachedSearchConfig: { searchProvider: SearchProvider; searchModel?: string } | null = null;
+export interface SearchConfig {
+	searchProvider: SearchProvider;
+	searchModel?: string;
+	providerPriority?: ResolvedSearchProvider[];
+}
 
-function getSearchConfig(): { searchProvider: SearchProvider; searchModel?: string } {
+let cachedSearchConfig: SearchConfig | null = null;
+
+/**
+ * Validate a user-supplied provider-priority list. Drops unknown names,
+ * meta-values (`auto`/`priority`), duplicates, and non-strings; preserves
+ * order. Returns `null` for a missing/empty/invalid list so callers can fall
+ * back to `DEFAULT_AUTO_ORDER`. Exported for testing.
+ */
+export function normalizeProviderPriority(value: unknown): ResolvedSearchProvider[] | null {
+	if (!Array.isArray(value)) return null;
+	const out: ResolvedSearchProvider[] = [];
+	const seen = new Set<ResolvedSearchProvider>();
+	for (const entry of value) {
+		if (typeof entry !== "string") continue;
+		const normalized = entry.trim().toLowerCase();
+		if (normalized === "auto" || normalized === "priority") continue;
+		if (!ALL_PROVIDERS.has(normalized as ResolvedSearchProvider)) continue;
+		const p = normalized as ResolvedSearchProvider;
+		if (seen.has(p)) continue;
+		seen.add(p);
+		out.push(p);
+	}
+	return out.length > 0 ? out : null;
+}
+
+function getSearchConfig(): SearchConfig {
 	if (cachedSearchConfig) return cachedSearchConfig;
 	if (!existsSync(CONFIG_PATH)) {
-		cachedSearchConfig = { searchProvider: "auto", searchModel: undefined };
+		cachedSearchConfig = { searchProvider: "auto", searchModel: undefined, providerPriority: null };
 		return cachedSearchConfig;
 	}
 
@@ -31,12 +77,14 @@ function getSearchConfig(): { searchProvider: SearchProvider; searchModel?: stri
 		searchProvider?: SearchProvider;
 		provider?: SearchProvider;
 		searchModel?: unknown;
+		providerPriority?: unknown;
 	};
 	try {
 		raw = JSON.parse(rawText) as {
 			searchProvider?: SearchProvider;
 			provider?: SearchProvider;
 			searchModel?: unknown;
+			providerPriority?: unknown;
 		};
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -46,6 +94,7 @@ function getSearchConfig(): { searchProvider: SearchProvider; searchModel?: stri
 	cachedSearchConfig = {
 		searchProvider: normalizeSearchProvider(raw.searchProvider ?? raw.provider),
 		searchModel: normalizeSearchModel(raw.searchModel),
+		providerPriority: normalizeProviderPriority(raw.providerPriority),
 	};
 	return cachedSearchConfig;
 }
@@ -58,7 +107,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel"
+	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel"
 		? normalized
 		: "auto";
 }
@@ -153,34 +202,20 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
+	// Shared fallback loop for `auto`, `priority`, and the fall-through from
+	// an explicit `exa` selection that had no API key (don't retry exa there).
+	const order = resolveFallbackOrder(provider, config);
 	const fallbackErrors: string[] = [];
 
-	if (provider !== "exa" && isExaAvailable()) {
+	for (const candidate of order) {
+		if (!(await isCandidateAvailable(candidate))) continue;
 		try {
-			const result = await searchWithExa(query, options);
-			if (result && "answer" in result) return { ...result, provider: "exa" };
+			const result = await runFallbackProvider(candidate, query, options);
+			if (result) return { ...result, provider: candidate };
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Exa: ${errorMessage(err)}`);
+			fallbackErrors.push(`${PROVIDER_LABELS[candidate]}: ${errorMessage(err)}`);
 		}
-	}
-
-	if (isPerplexityAvailable()) {
-		try {
-			const result = await searchWithPerplexity(query, options);
-			return { ...result, provider: "perplexity" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Perplexity: ${errorMessage(err)}`);
-		}
-	}
-
-	try {
-		const geminiResult = await searchWithGemini(query, options, false);
-		if (geminiResult) return { ...geminiResult, provider: "gemini" };
-	} catch (err) {
-		if (isAbortError(err)) throw err;
-		fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
 	}
 
 	if (fallbackErrors.length > 0) {
@@ -195,6 +230,56 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		"  4. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
 		"  5. Sign into gemini.google.com in a supported Chromium-based browser"
 	);
+}
+
+/**
+ * Resolve the ordered provider list for the shared fallback loop. `auto` uses
+ * the built-in order; `priority` uses the configured `providerPriority`
+ * (falling back to the built-in order if unset/invalid); an explicit `exa`
+ * that fell through (no key) retries the remaining built-in providers only.
+ */
+function resolveFallbackOrder(provider: SearchProvider, config: SearchConfig): ResolvedSearchProvider[] {
+	if (provider === "priority") {
+		return config.providerPriority ?? DEFAULT_AUTO_ORDER;
+	}
+	if (provider === "exa") {
+		return DEFAULT_AUTO_ORDER.filter(p => p !== "exa");
+	}
+	return DEFAULT_AUTO_ORDER;
+}
+
+async function isCandidateAvailable(p: ResolvedSearchProvider): Promise<boolean> {
+	switch (p) {
+		case "exa":
+			return isExaAvailable();
+		case "perplexity":
+			return isPerplexityAvailable();
+		case "gemini":
+			return isGeminiApiAvailable() || !!(await isGeminiWebAvailable());
+		case "parallel":
+			return isParallelAvailable();
+	}
+}
+
+/** Execute a single provider in fallback mode. Returns null when the provider
+ * produced no usable result; throws on error. Mirrors the prior inline blocks. */
+async function runFallbackProvider(
+	p: ResolvedSearchProvider,
+	query: string,
+	options: SearchOptions,
+): Promise<SearchResponse | null> {
+	switch (p) {
+		case "exa": {
+			const result = await searchWithExa(query, options);
+			return result && "answer" in result ? result : null;
+		}
+		case "perplexity":
+			return await searchWithPerplexity(query, options);
+		case "gemini":
+			return await searchWithGemini(query, options, false);
+		case "parallel":
+			return await searchWithParallel(query, options);
+	}
 }
 
 async function searchWithGeminiApi(query: string, options: SearchOptions = {}): Promise<SearchResponse | null> {

@@ -1,5 +1,6 @@
 export interface WebSearchConfig {
 	provider?: string;
+	providerPriority?: unknown;
 	workflow?: string;
 	allowCurator?: unknown;
 	curatorTimeoutSeconds?: unknown;
