@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-24
+
 ### Added
 - **Provider-priority routing for `web_search`.** New `provider: "priority"` mode and `providerPriority` config field let users control the order providers are tried, instead of being locked into the built-in `auto` order (Exa → Perplexity → Gemini). Unset/invalid `providerPriority` falls back to `auto` order; unknown names, duplicates, and the meta-values `auto`/`priority` are dropped. `parallel` remains opt-in (not in `auto`) but is honored when explicitly listed in `providerPriority`.
 - **Headless `auto-summary` workflow + `webSearch.enabled` gate.** New `workflow: "auto-summary"` mode generates a model summary inline without opening the browser curator — works in `-p` / CI / SSH sessions. Because it never opens the browser, it bypasses both the `allowCurator` and `hasUI` guards, so `allowCurator: false` becomes a true headless mode (schema advertises `["none", "auto-summary"]`). New `webSearch.enabled` config (default `true`) unregisters the `web_search` tool entirely; the other three tools remain. *(Ports upstream 22cdb46.)*
