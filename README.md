@@ -366,8 +366,10 @@ unactioned since 5/4/26**.
   ```
 
 Contributions (fixes, features, cherry-picked upstream PRs) are welcome as PRs
-against **this fork**. When referencing upstream commits or PRs, please cite the
-original author's work.
+against **this fork**. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the
+development setup, test conventions, the cherry-pick-with-attribution workflow,
+and how outstanding upstream PRs are being merged here. When referencing
+upstream commits or PRs, please cite the original author's work.
 
 <details>
 <summary>Files</summary>
