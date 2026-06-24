@@ -38,7 +38,7 @@ import { isPerplexityAvailable } from "./providers/perplexity.js";
 import { isExaAvailable } from "./providers/exa.js";
 import { isGeminiApiAvailable } from "./providers/gemini-api.js";
 import { getActiveGoogleEmail, isGeminiWebAvailable } from "./providers/gemini-web.js";
-import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
+import { isBrowserCookieAccessAllowed } from "./providers/gemini-web-config.ts";
 import {
 	getWorkflowValues,
 	isCuratorAllowed,
