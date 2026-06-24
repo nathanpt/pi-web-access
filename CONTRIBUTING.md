@@ -39,7 +39,7 @@ merged upstream PR so far) is:
 
 If you have an open PR on upstream, the fastest way to see it land here is to
 **open an issue** on this fork linking to it with a one-line "why this matters."
-That surfaces it for triage in the [upstream audit](docs/) (a local working
+That surfaces it for triage in the [upstream audit](.docs/) (a local working
 document).
 
 ## Development setup
