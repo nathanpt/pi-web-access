@@ -15,8 +15,8 @@
 > [`nicobailon/pi-web-access`](https://github.com/nicobailon/pi-web-access). The
 > upstream project is **no longer maintained** (30+ open PRs unactioned since
 > **5/4/26**). `upstream` stays pointed at the original and its outstanding PRs are
-> being merged into this fork. **Not published to npm** — install locally with
-> `pi -e /home/nathan/dev/projects/pi-web-access`. See
+> being merged into this fork. **Not published to npm** — install it from GitHub
+> with `pi install git:github.com/nathanpt/pi-web-access`. See
 > [Maintenance & Fork Status](#maintenance--fork-status) below.
 
 https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
@@ -34,14 +34,15 @@ https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 ## Install
 
 This fork is **not published to npm** — the `pi-web-access` package on npm is the
-original, now-unmaintained upstream version. Install this fork directly from a
-local checkout:
+original, now-unmaintained upstream version. Install this fork directly from
+GitHub:
 
 ```bash
-pi -e /home/nathan/dev/projects/pi-web-access
+pi install git:github.com/nathanpt/pi-web-access
 ```
 
-> Replace the path with your own clone location if you checked the fork out elsewhere.
+> Prefer HTTPS? `pi install https://github.com/nathanpt/pi-web-access` works too.
+> To try it without installing: `pi -e git:github.com/nathanpt/pi-web-access`.
 > See [Maintenance & Fork Status](#maintenance--fork-status) for background.
 
 Works immediately with no API keys — Exa MCP provides zero-config search. For more providers or direct API access, add keys to `~/.pi/web-search.json`:
@@ -358,11 +359,11 @@ unactioned since 5/4/26**.
 - **PRs are being merged here.** The open PRs from upstream are being reviewed and
   pulled into this fork incrementally.
 - **Not on npm (for now).** Do **not** install via `pi install npm:pi-web-access` —
-  that pulls the original, unmaintained version. Install this fork from a local
-  checkout instead:
+  that pulls the original, unmaintained version. Install this fork from GitHub
+  instead:
 
   ```bash
-  pi -e /home/nathan/dev/projects/pi-web-access
+  pi install git:github.com/nathanpt/pi-web-access
   ```
 
 Contributions (fixes, features, cherry-picked upstream PRs) are welcome as PRs
