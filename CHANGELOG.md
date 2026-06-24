@@ -5,16 +5,23 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Provider-priority routing for `web_search`.** New `provider: "priority"` mode and `providerPriority` config field let users control the order providers are tried, instead of being locked into the built-in `auto` order (Exa → Perplexity → Gemini). Unset/invalid `providerPriority` falls back to `auto` order; unknown names, duplicates, and the meta-values `auto`/`priority` are dropped. `parallel` remains opt-in (not in `auto`) but is honored when explicitly listed in `providerPriority`.
 - Added `GOOGLE_GEMINI_BASE_URL` env var and `geminiBaseUrl` config key to route Gemini API requests through a compatible gateway (e.g. Cloudflare AI Gateway, LiteLLM, Helicone). Matches the env var name used by the official Gemini CLI. Takes precedence: env var > config > Google default endpoint.
 - Added `CLOUDFLARE_API_KEY` env var and `cloudflareApiKey` config key for Cloudflare AI Gateway authentication (`cf-aig-authorization` header), matching how pi core handles the same gateway. Automatically activated when the configured host contains `gateway.ai.cloudflare.com`.
 
 ### Fixed
+- **`code_search` summary model resolution** now uses `lastIndexOf("/")` so model ids containing multiple slashes (e.g. `openrouter/nvidia/llama-3:free`) resolve the provider from the last path segment. *(Ports upstream #90.)*
+- **`fetch_content` parameter normalization** — dedupes repeated `urls`, drops blank/non-integer `frames` values, and fixes the empty-`urls` fallback to use `url`. Extracted into a `fetch-params.ts` helper. *(Ports upstream #88.)*
+- **YouTube extraction** now surfaces each provider attempt's real error (Gemini Web / Gemini API / Perplexity) in a structured result instead of returning bare `null` with generic guidance; added an `isPerplexityAvailable()` guard and suppresses thumbnail/activity status on the error path. *(Ports upstream #100.)*
 - Prevented `web_search` curator sessions from hanging indefinitely when the browser never connects or when a connected curator page keeps heartbeating but fails to submit after its idle timeout; the server now finalizes with the existing timeout fallback.
 - Prevented concurrent curated `web_search` calls from canceling or orphaning each other; additional concurrent searches now bypass browser review and return directly while one curator is active.
 - Improved in-terminal curator progress while waiting for summary approval by showing the curator URL, idle timeout, and reopen shortcut.
 - Split `API_BASE` into `DEFAULT_API_HOST` + `API_VERSION` constants so gateway base URL overrides do not require users to include the version segment (`/v1beta`). `API_BASE` is kept as a deprecated export for backward compatibility.
 - Added `role: "user"` to all `contents[]` entries in `:generateContent` request bodies. Google's public endpoint defaults the role server-side, but Vertex AI-backed proxies reject requests without an explicit role.
 - Updated all four Gemini API call sites (`gemini-search.ts`, `gemini-url-context.ts`, `gemini-api.ts`, `video-extract.ts`) to use `getVersionedApiBase()` so gateway URL overrides take effect consistently.
+
+### Repository
+- **Divergence from upstream: `code_search` is retained.** Upstream removed `code_search` in `7ae547d` ("duplicated Exa search provider from `web_search`"). This fork **intentionally keeps** `code_search` — it targets Exa's distinct `get_code_context_exa` code-context index with token-budgeting and code-focused query tuning that `web_search` does not replicate, and there is no host-collision evidence. Future merges should **permanently skip upstream `7ae547d`**.
 
 ## [0.10.7] - 2026-05-02
 
