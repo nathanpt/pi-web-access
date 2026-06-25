@@ -44,6 +44,7 @@ https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 | 🎥 **Video understanding** | YouTube transcripts & visual Q&A, local-video frame extraction at timestamps |
 | 🧠 **Headless summaries** | `auto-summary` workflow — model summaries without the browser curator |
 | ⚙️ **Provider control** | `provider: "priority"` + `providerPriority` list to set the exact try-order |
+| 🔑 **Key management** | `/webaccess set-key` / `clear-key` / `test-key` — add, remove, or dry-run provider keys; no JSON editing |
 | 🛡️ **Billing safety** | Summaries honor `enabledModels`; deterministic fallback when none is enabled |
 | 📁 **XDG config** | `PI_CODING_AGENT_DIR` → `XDG_CONFIG_HOME/pi` → `~/.pi` |
 | 🔌 **Bring your own gateway** | `GOOGLE_GEMINI_BASE_URL` + Cloudflare AI Gateway / LiteLLM / Helicone routing |
@@ -64,7 +65,16 @@ pi install git:github.com/nathanpt/pi-web-access
 > To try it without installing: `pi -e git:github.com/nathanpt/pi-web-access`.
 > See [Maintenance & Fork Status](#maintenance--fork-status) for background.
 
-Works immediately with no API keys — Exa MCP provides zero-config search. For more providers or direct API access, add keys to `~/.pi/web-search.json`:
+Works immediately with no API keys — Exa MCP provides zero-config search. For more providers or direct API access, add keys via the command (no hand-editing):
+
+```
+/webaccess set-key exa exa-...
+/webaccess set-key perplexity pplx-...
+/webaccess set-key gemini AIza...
+/webaccess set-key parallel parallel-key...
+```
+
+Keys are validated and never echoed back (the confirmation shows only a last-4 fingerprint). You can also edit `~/.pi/web-search.json` directly, or set the env vars (`EXA_API_KEY`, `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, `PARALLEL_API_KEY`):
 
 ```json
 {
@@ -90,7 +100,7 @@ Requires Pi v0.37.3+.
 
 ## Quick Start
 
-Zero-config: `web_search` works out of the box via Exa's public MCP endpoint. To wire in your own keys or change behavior, run `/webaccess` (inspect status, update fields with validation) or edit `~/.pi/web-search.json` — see [Configuration](docs/configuration.md).
+Zero-config: `web_search` works out of the box via Exa's public MCP endpoint. To wire in your own keys or change behavior, run `/webaccess` — it's the single command for inspecting status, setting/clearing/testing API keys, and running config diagnostics (`/webaccess doctor`). Run `/webaccess help` for the full reference, or see [Configuration](docs/configuration.md).
 
 ```typescript
 // Search the web
@@ -172,7 +182,7 @@ upstream commits or PRs, please cite the original author's work.
 | `workflow.ts` | Curator workflow resolution (`/curator` on/off/none/auto-summary) |
 | `chrome-cookies.ts` | macOS/Linux Chromium-based cookie extraction (Keychain/secret-tool + SQLite) |
 | `config.ts` | **Centralized config owner** — load/save/normalize/redaction/precedence/status/validation for `~/.pi/web-search.json`; `normalizeApiKey` + placeholder-key detection; `getEffectiveConfig` + `getProviderCredentialStatus` power `/webaccess` |
-| `webaccess-command.ts` | Pure validation + formatting for the `/webaccess` command (provider/workflow/provider-priority/allow-browser-cookies/search-model/curator-timeout) |
+| `webaccess-command.ts` | Pure validation + formatting for the `/webaccess` command: summary, `set-key`/`clear-key`/`test-key`/`export`/`doctor`, and field sets (provider/workflow/provider-priority/allow-browser-cookies/search-model/curator-timeout) |
 | `providers/exa.ts` | Exa.ai search provider — direct API and MCP proxy, budget tracking |
 | `providers/perplexity.ts` | Perplexity API client with rate limiting |
 | `providers/parallel.ts` | Parallel search provider — `api.parallel.ai` web search, included as the last fallback in `auto` mode |
