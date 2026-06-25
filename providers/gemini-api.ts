@@ -1,63 +1,23 @@
-import { existsSync, readFileSync } from "node:fs";
+import { loadWebSearchConfig, normalizeApiKey } from "../config.js";
 import { getWebSearchConfigPath } from "../utils.js";
 
 const DEFAULT_API_HOST = "https://generativelanguage.googleapis.com";
-const API_VERSION = "v1beta";
-/**
- * @deprecated Use `getVersionedApiBase()` instead.
- * Kept for backward compatibility with external imports.
- */
-export const API_BASE = `${DEFAULT_API_HOST}/${API_VERSION}`;
-const CONFIG_PATH = getWebSearchConfigPath();
-export const DEFAULT_MODEL = "gemini-3-flash-preview";
-
-interface GeminiApiConfig {
-	geminiApiKey?: unknown;
-	/**
-	 * Override the Gemini API host URL (no trailing slash, no version segment).
-	 * Matches the `GOOGLE_GEMINI_BASE_URL` env var used by the official Gemini CLI.
-	 * Example: "https://my-gateway.example.com/gemini"
-	 */
-	geminiBaseUrl?: unknown;
-	/**
-	 * API key for Cloudflare AI Gateway (`cf-aig-authorization` header).
-	 * Matches the `CLOUDFLARE_API_KEY` env var used by pi core for the same gateway.
-	 */
-	cloudflareApiKey?: unknown;
-}
-
-let cachedConfig: GeminiApiConfig | null = null;
-
-function loadConfig(): GeminiApiConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	try {
-		cachedConfig = JSON.parse(raw) as GeminiApiConfig;
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-}
 
 function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
 	const timeout = AbortSignal.timeout(timeoutMs);
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-function normalizeApiKey(value: unknown): string | null {
-	if (typeof value !== "string") return null;
-	const normalized = value.trim();
-	return normalized.length > 0 ? normalized : null;
-}
+const API_VERSION = "v1beta";
+/**
+ * @deprecated Use `getVersionedApiBase()` instead.
+ * Kept for backward compatibility with external imports.
+ */
+export const API_BASE = `${DEFAULT_API_HOST}/${API_VERSION}`;
+export const DEFAULT_MODEL = "gemini-3-flash-preview";
 
 export function getApiKey(): string | null {
-	return normalizeApiKey(process.env.GEMINI_API_KEY) ?? normalizeApiKey(loadConfig().geminiApiKey);
+	return normalizeApiKey(process.env.GEMINI_API_KEY) ?? normalizeApiKey(loadWebSearchConfig().geminiApiKey);
 }
 
 function normalizeBaseUrl(value: unknown): string | null {
@@ -76,7 +36,7 @@ function normalizeBaseUrl(value: unknown): string | null {
 export function getApiHost(): string {
 	return (
 		normalizeBaseUrl(process.env.GOOGLE_GEMINI_BASE_URL) ??
-		normalizeBaseUrl(loadConfig().geminiBaseUrl) ??
+		normalizeBaseUrl(loadWebSearchConfig().geminiBaseUrl) ??
 		DEFAULT_API_HOST
 	);
 }
@@ -111,7 +71,7 @@ export function buildKeyParam(apiKey: string | null): string {
  * Resolution order: CLOUDFLARE_API_KEY env var, then cloudflareApiKey in config.
  */
 export function getCloudflareApiKey(): string | null {
-	return normalizeApiKey(process.env.CLOUDFLARE_API_KEY) ?? normalizeApiKey(loadConfig().cloudflareApiKey);
+	return normalizeApiKey(process.env.CLOUDFLARE_API_KEY) ?? normalizeApiKey(loadWebSearchConfig().cloudflareApiKey);
 }
 
 /**
@@ -155,7 +115,7 @@ export async function queryGeminiApiWithVideo(
 	const apiKey = getApiKey();
 	if (!apiKey && !isGatewayConfigured()) throw new Error(
 		"Gemini API not configured. Either:\n" +
-		`  1. Set GEMINI_API_KEY in ${CONFIG_PATH}\n` +
+		`  1. Set GEMINI_API_KEY in ${getWebSearchConfigPath()}\n` +
 		"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing"
 	);
 

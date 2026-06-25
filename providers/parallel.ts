@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
 import { getWebSearchConfigPath } from "../utils.js";
+import { loadWebSearchConfig, normalizeApiKey } from "../config.js";
 import { activityMonitor } from "../activity.js";
 import type { SearchOptions, SearchResponse } from "./perplexity.js";
 import type { ExtractedContent } from "../extract.js";
@@ -10,34 +10,6 @@ const PARALLEL_EXTRACT_URL = "https://api.parallel.ai/v1/extract";
 const SEARCH_MAX_CHARS_TOTAL = 40000;
 const CONFIG_PATH = getWebSearchConfigPath();
 
-interface WebSearchConfig {
-	parallelApiKey?: unknown;
-}
-
-let cachedConfig: WebSearchConfig | null = null;
-
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const content = readFileSync(CONFIG_PATH, "utf-8");
-	try {
-		cachedConfig = JSON.parse(content) as WebSearchConfig;
-		return cachedConfig;
-	} catch (err) {
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${errorMessage(err)}`);
-	}
-}
-
-function normalizeApiKey(value: unknown): string | null {
-	if (typeof value !== "string") return null;
-	const normalized = value.trim();
-	return normalized.length > 0 ? normalized : null;
-}
-
 function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
@@ -47,7 +19,7 @@ function isAbortError(err: unknown): boolean {
 }
 
 function getApiKey(): string {
-	const config = loadConfig();
+	const config = loadWebSearchConfig();
 	const key = normalizeApiKey(process.env.PARALLEL_API_KEY) ?? normalizeApiKey(config.parallelApiKey);
 	if (!key) {
 		throw new Error(
@@ -61,7 +33,7 @@ function getApiKey(): string {
 }
 
 export function isParallelAvailable(): boolean {
-	const config = loadConfig();
+	const config = loadWebSearchConfig();
 	return !!(normalizeApiKey(process.env.PARALLEL_API_KEY) ?? normalizeApiKey(config.parallelApiKey));
 }
 

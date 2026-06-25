@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getWebSearchConfigDir, getWebSearchConfigPath } from "../utils.js";
+import { loadWebSearchConfig, normalizeApiKey } from "../config.js";
 import { activityMonitor } from "../activity.js";
 import type { ExtractedContent } from "../extract.js";
 import type { SearchOptions, SearchResponse } from "./perplexity.js";
@@ -8,15 +9,10 @@ import type { SearchOptions, SearchResponse } from "./perplexity.js";
 const EXA_ANSWER_URL = "https://api.exa.ai/answer";
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
-const CONFIG_PATH = getWebSearchConfigPath();
 const USAGE_PATH = join(getWebSearchConfigDir(), "exa-usage.json");
 
 const MONTHLY_LIMIT = 1000;
 const WARNING_THRESHOLD = 800;
-
-interface WebSearchConfig {
-	exaApiKey?: unknown;
-}
 
 interface ExaUsage {
 	month: string;
@@ -59,34 +55,10 @@ export interface ExaSearchOptions extends SearchOptions {
 
 type McpParsedResult = { title: string; url: string; content: string };
 
-let cachedConfig: WebSearchConfig | null = null;
 let warnedMonth: string | null = null;
 
-function loadConfig(): WebSearchConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
-	try {
-		cachedConfig = JSON.parse(raw) as WebSearchConfig;
-		return cachedConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-}
-
-function normalizeApiKey(value: unknown): string | null {
-	if (typeof value !== "string") return null;
-	const normalized = value.trim();
-	return normalized.length > 0 ? normalized : null;
-}
-
 function getApiKey(): string | null {
-	return normalizeApiKey(process.env.EXA_API_KEY) ?? normalizeApiKey(loadConfig().exaApiKey);
+	return normalizeApiKey(process.env.EXA_API_KEY) ?? normalizeApiKey(loadWebSearchConfig().exaApiKey);
 }
 
 function getCurrentMonth(): string {

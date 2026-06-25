@@ -90,6 +90,8 @@ Requires Pi v0.37.3+.
 
 ## Quick Start
 
+Zero-config: `web_search` works out of the box via Exa's public MCP endpoint. To wire in your own keys or change behavior, run `/webaccess` (inspect status, update fields with validation) or edit `~/.pi/web-search.json` — see [Configuration](docs/configuration.md).
+
 ```typescript
 // Search the web
 web_search({ query: "TypeScript best practices 2025" })
@@ -114,7 +116,7 @@ The README is a landing page — full reference lives in [`docs/`](docs/):
 | --- | --- |
 | 🛠️ [Tools](docs/tools.md) | `web_search`, `code_search`, `fetch_content`, `get_search_content` — parameters & examples |
 | 🎯 [Capabilities](docs/capabilities.md) | GitHub cloning, YouTube, local video, PDFs, blocked pages, and the full fallback-chain diagram |
-| ⌨️ [Commands](docs/commands.md) | `/websearch`, `/curator`, `/search`, `/google-account`, and the activity monitor |
+| ⌨️ [Commands](docs/commands.md) | `/webaccess` (config & status), `/websearch`, `/curator`, `/search`, `/google-account`, and the activity monitor |
 | ⚙️ [Configuration](docs/configuration.md) | Every config field, env vars, XDG path, gateway routing, shortcuts, limitations |
 | 📚 [Skills](docs/skills.md) | The bundled `librarian` research skill |
 

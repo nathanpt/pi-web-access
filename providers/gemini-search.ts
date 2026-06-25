@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
 import { getWebSearchConfigPath } from "../utils.js";
+import { loadWebSearchConfig } from "../config.js";
 import { activityMonitor } from "../activity.js";
 import { getApiKey, getVersionedApiBase, buildKeyParam, buildAuthHeaders, isGatewayConfigured, isGeminiApiAvailable, DEFAULT_MODEL } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
@@ -39,8 +39,6 @@ export interface SearchConfig {
 	providerPriority?: ResolvedSearchProvider[];
 }
 
-let cachedSearchConfig: SearchConfig | null = null;
-
 /**
  * Validate a user-supplied provider-priority list. Drops unknown names,
  * meta-values (`auto`/`priority`), duplicates, and non-strings; preserves
@@ -65,37 +63,12 @@ export function normalizeProviderPriority(value: unknown): ResolvedSearchProvide
 }
 
 function getSearchConfig(): SearchConfig {
-	if (cachedSearchConfig) return cachedSearchConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedSearchConfig = { searchProvider: "auto", searchModel: undefined, providerPriority: null };
-		return cachedSearchConfig;
-	}
-
-	const rawText = readFileSync(CONFIG_PATH, "utf-8");
-	let raw: {
-		searchProvider?: SearchProvider;
-		provider?: SearchProvider;
-		searchModel?: unknown;
-		providerPriority?: unknown;
-	};
-	try {
-		raw = JSON.parse(rawText) as {
-			searchProvider?: SearchProvider;
-			provider?: SearchProvider;
-			searchModel?: unknown;
-			providerPriority?: unknown;
-		};
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-
-	cachedSearchConfig = {
+	const raw = loadWebSearchConfig();
+	return {
 		searchProvider: normalizeSearchProvider(raw.searchProvider ?? raw.provider),
 		searchModel: normalizeSearchModel(raw.searchModel),
 		providerPriority: normalizeProviderPriority(raw.providerPriority),
 	};
-	return cachedSearchConfig;
 }
 
 function normalizeSearchModel(value: unknown): string | undefined {

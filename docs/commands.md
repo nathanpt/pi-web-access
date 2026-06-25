@@ -1,5 +1,27 @@
 # Commands & Activity Monitor
 
+## /webaccess
+
+Inspect or update the extension's config without hand-editing `~/.pi/web-search.json`. With no arguments it prints a **summary**: the config-file path, routing settings (default provider, provider priority, workflow, curator, search model), a provider-credential table showing where each key comes from (`env` / `config` / `missing`) and whether the provider is selectable, and the browser-cookie status. **Secrets are never displayed** — only provenance.
+
+```
+/webaccess                                              # show effective config + provider status
+/webaccess provider perplexity                          # set default search provider
+/webaccess provider auto                                # back to built-in auto order
+/webaccess workflow none                                # raw results, no curator
+/webaccess workflow summary-review                       # open curator with summary draft (default)
+/webaccess workflow auto-summary                         # headless summary, no browser
+/webaccess provider-priority exa,perplexity,gemini       # order tried when provider is "priority"
+/webaccess allow-browser-cookies on                      # enable Chromium cookie extraction
+/webaccess allow-browser-cookies off
+/webaccess search-model gemini-2.5-flash                 # override the web_search model
+/webaccess curator-timeout 45                            # curator idle timeout (seconds, 1–600)
+```
+
+Every set runs through validation before writing — unknown providers, bad model patterns, malformed priority lists, and out-of-range timeouts are rejected without touching the file. Writes preserve the existing config and clear the in-memory cache, so the change is visible to providers immediately. Precedence (`env > config > defaults`) is preserved: a value set via env var is shown as `env` and is not overwritten by a `/webaccess set`.
+
+See also: [Configuration](configuration.md) for the full field reference.
+
 ## /websearch
 
 Open the search curator directly. Runs searches and lets you review, add, select results, and approve a summary before it is sent back to the agent — no LLM round-trip needed.
