@@ -207,7 +207,7 @@ test("unknown field returns help, does not write", () => {
 
 test("SET_FIELDS covers all documented set targets", () => {
 	assert.deepEqual([...SET_FIELDS], [
-		"provider", "workflow", "provider-priority", "allow-browser-cookies", "search-model", "curator-timeout",
+		"provider", "workflow", "provider-priority", "allow-curator", "allow-browser-cookies", "search-model", "curator-timeout",
 	]);
 });
 
@@ -661,4 +661,65 @@ test("doctor does not flag workflow=auto-summary with curator disabled (headless
 test("help page documents doctor", () => {
 	const text = formatWebAccessHelp();
 	assert.match(text, /\/webaccess doctor/);
+});
+
+// ---- allow-curator ----
+
+test("allow-curator on/off writes allowCurator + invalidates cache", () => {
+	const home = isolate();
+	try {
+		const { text, wrote } = handleWebAccessCommand("allow-curator off");
+		assert.equal(wrote, true);
+		assert.match(text, /Updated.*allow-curator.*false/);
+		assert.equal(readConfig(home).allowCurator, false);
+		// toggle back
+		handleWebAccessCommand("allow-curator on");
+		assert.equal(readConfig(home).allowCurator, true);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("allow-curator accepts on/off/true/false, rejects other values", () => {
+	const home = isolate();
+	try {
+		assert.equal(handleWebAccessCommand("allow-curator off").wrote, true);
+		assert.equal(handleWebAccessCommand("allow-curator TRUE").wrote, true);
+		assert.equal(handleWebAccessCommand("allow-curator maybe").wrote, false);
+		assert.match(handleWebAccessCommand("allow-curator maybe").text, /allow-curator must be on\/off/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("allow-curator off warns when workflow=summary-review would become inert", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		writeFileSync(configPath(home), JSON.stringify({ workflow: "summary-review" }));
+		const { text } = handleWebAccessCommand("allow-curator off");
+		assert.match(text, /workflow.*summary-review.*resolves to .none./);
+		assert.match(text, /workflow auto-summary/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("allow-curator off does NOT warn when workflow is auto-summary or none", () => {
+	const home = isolate();
+	try {
+		for (const wf of ["auto-summary", "none"]) {
+			mkdirSync(join(home, ".pi"), { recursive: true });
+			writeFileSync(configPath(home), JSON.stringify({ workflow: wf }));
+			const { text } = handleWebAccessCommand("allow-curator off");
+			assert.equal(/resolves to .none./.test(text), false, `${wf}: unexpected inert-workflow warning`);
+		}
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("help page documents allow-curator", () => {
+	const text = formatWebAccessHelp();
+	assert.match(text, /allow-curator <on\|off>/);
 });

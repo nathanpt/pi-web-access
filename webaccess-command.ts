@@ -110,6 +110,7 @@ export const SET_FIELDS = [
 	"provider",
 	"workflow",
 	"provider-priority",
+	"allow-curator",
 	"allow-browser-cookies",
 	"search-model",
 	"curator-timeout",
@@ -212,6 +213,7 @@ export function formatWebAccessHelp(): string {
 	lines.push("/webaccess provider <auto|priority|exa|perplexity|gemini|parallel>");
 	lines.push("/webaccess provider-priority <exa,perplexity,gemini,parallel>   # order for 'priority'");
 	lines.push("/webaccess workflow <none|summary-review|auto-summary>");
+	lines.push("/webaccess allow-curator <on|off>                                # off = headless-only (summary-review -> none)");
 	lines.push("/webaccess search-model <model-id>                              # '' to clear");
 	lines.push("/webaccess curator-timeout <1-600>                              # seconds");
 	lines.push("");
@@ -467,6 +469,10 @@ export function handleWebAccessCommand(args: string): WebAccessResult {
 			result = validateProviderPriority(rawValue);
 			configUpdate = result.ok ? { providerPriority: result.value } : {};
 			break;
+		case "allow-curator":
+			result = validateBoolean(rawValue, field);
+			configUpdate = result.ok ? { allowCurator: result.value } : {};
+			break;
 		case "allow-browser-cookies":
 			result = validateBoolean(rawValue, field);
 			configUpdate = result.ok ? { allowBrowserCookies: result.value } : {};
@@ -486,7 +492,18 @@ export function handleWebAccessCommand(args: string): WebAccessResult {
 	}
 
 	saveWebSearchConfig(configUpdate);
-	return { text: formatSetConfirmation(field, result.value), wrote: true };
+	let text = formatSetConfirmation(field, result.value);
+	// Heads-up: disabling the curator makes workflow=summary-review inert
+	// (it silently resolves to `none`). The doctor check flags this too, but
+	// surfacing it at set time saves a confused user from a later search that
+	// returns raw results unexpectedly. Suggest auto-summary (still headless).
+	if (field === "allow-curator" && result.value === false) {
+		const wf = getEffectiveConfig().workflow;
+		if (wf === "summary-review") {
+			text += "  ⚠️ your `workflow` is `summary-review`, which resolves to `none` while the curator is off. Run `/webaccess workflow auto-summary` for a headless summary.";
+		}
+	}
+	return { text, wrote: true };
 }
 
 /**
