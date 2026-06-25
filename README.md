@@ -75,7 +75,7 @@ Works immediately with no API keys — Exa MCP provides zero-config search. For 
 }
 ```
 
-In `auto` mode (default), `web_search` tries Exa first (direct API if keyed, MCP if not), then Perplexity, then Gemini API, then Gemini Web when browser-cookie access is enabled. For full control over the order, set a `providerPriority` list in config (e.g. `["perplexity", "exa", "gemini"]`) and select `provider: "priority"` — providers are tried in that order, skipping any that are unavailable and falling through on error. If `providerPriority` is unset or invalid, `priority` falls back to the built-in `auto` order. The `parallel` provider is opt-in only — set `provider: "parallel"` explicitly (it is not part of auto selection or fallback ordering, though you may include it in a `providerPriority` list) and requires a Parallel API key.
+In `auto` mode (default), `web_search` tries providers in this order: Exa (direct API if keyed, MCP if not) → Perplexity → Gemini (API, then Web when browser-cookie access is enabled) → Parallel (as a last-resort fallback if you've configured a Parallel key). For full control over the order, set a `providerPriority` list in config (e.g. `["perplexity", "exa", "gemini"]`) and select `provider: "priority"` — providers are tried in that order, skipping any that are unavailable and falling through on error. If `providerPriority` is unset or invalid, `priority` falls back to the built-in `auto` order. Placeholder values (e.g. `"your-key"`) are treated as missing, so a leftover template value never causes a 401 mid-fallback. You can still select Parallel explicitly with `provider: "parallel"` (requires a Parallel API key).
 
 Optional dependencies for video frame extraction:
 
@@ -173,7 +173,7 @@ upstream commits or PRs, please cite the original author's work.
 | `chrome-cookies.ts` | macOS/Linux Chromium-based cookie extraction (Keychain/secret-tool + SQLite) |
 | `providers/exa.ts` | Exa.ai search provider — direct API and MCP proxy, budget tracking |
 | `providers/perplexity.ts` | Perplexity API client with rate limiting |
-| `providers/parallel.ts` | Parallel search provider — `api.parallel.ai` web search, `provider: "parallel"` (opt-in) |
+| `providers/parallel.ts` | Parallel search provider — `api.parallel.ai` web search, included as the last fallback in `auto` mode |
 | `providers/gemini-search.ts` | Search routing across Exa, Perplexity, Gemini API, Gemini Web |
 | `providers/gemini-api.ts` | Gemini REST API client (generateContent) |
 | `providers/gemini-web.ts` | Gemini Web client (cookie auth, StreamGenerate) |

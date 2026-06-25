@@ -104,10 +104,53 @@ export function saveWebSearchConfig(updates: Partial<RawWebSearchConfig>): void 
  * Shared by every provider's `getApiKey()` so the "is this key actually set?"
  * check is identical everywhere (env var and file value paths).
  */
+/**
+ * Detect a placeholder/template API key that a user copy-pasted from docs or
+ * left as a default (e.g. `"your-key"`, `"<your-api-key>"`, `"placeholder"`).
+ * Such a value is never a valid credential: treating it as missing lets the
+ * provider gracefully fall through to the next in the fallback chain instead
+ * of being selected and then 401-ing at call time. Conservative by design —
+ * real keys are high-entropy strings, so false positives are near-impossible.
+ * Exported for testing.
+ */
+const PLACEHOLDER_EXACT = new Set([
+	"placeholder",
+	"example",
+	"example-key",
+	"sample",
+	"demo",
+	"dummy",
+	"changeme",
+	"change-me",
+	"replace-me",
+	"replace_me",
+	"todo",
+	"xxx",
+	"xxxx",
+	"test",
+	"foo",
+	"bar",
+	"baz",
+]);
+
+export function isPlaceholderKey(value: string): boolean {
+	const trimmed = value.trim();
+	if (trimmed.length === 0) return false;
+	const lower = trimmed.toLowerCase();
+	if (PLACEHOLDER_EXACT.has(lower)) return true;
+	// Template-style: <...> brackets, or the canonical "your-key" / "your_api_key"
+	// family (covers your-key, your_key, your key, your-key-here, your-api-key).
+	if (/^<.+>$/.test(trimmed)) return true;
+	if (/^your[-_\s]?(api[-_\s]?)?key/i.test(trimmed)) return true;
+	return false;
+}
+
 export function normalizeApiKey(value: unknown): string | null {
 	if (typeof value !== "string") return null;
 	const normalized = value.trim();
-	return normalized.length > 0 ? normalized : null;
+	if (normalized.length === 0) return null;
+	if (isPlaceholderKey(normalized)) return null;
+	return normalized;
 }
 
 /**

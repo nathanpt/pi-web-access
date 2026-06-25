@@ -326,4 +326,49 @@ try {
 		assert.match(out, /Auto provider search failed/);
 		assert.match(out, /Exa:/);
 	});
+
+	// ---- ROADMAP item #2: parallel is now part of the default auto order ----
+
+	test("auto order now includes parallel as the last fallback", async () => {
+		// Only Parallel is keyed; exa (MCP) is mocked to fail, perplexity/gemini
+		// unkeyed+skipped. auto must reach parallel and return it.
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "parallel-real-key" });
+		const child = runSearch(home, `
+${buildFetchMockScript([
+	{ urlMatch: "mcp.exa.ai/mcp", ok: false, status: 503, response: "exa down" },
+	{ urlMatch: "api.parallel.ai/v1/search", response: { answer: "Parallel saved the day.", results: [{ title: "P", url: "https://p.example", snippet: "" }] } },
+])}
+const res = await search("query", { provider: "auto" });
+const parallelCalls = globalThis.__getCalls().filter((c) => c.url.includes("api.parallel.ai")).length;
+console.log(JSON.stringify({ provider: res.provider, parallelCalls }));
+`);
+		assertChildSuccess(child);
+		const parsed = JSON.parse(child.stdout.trim());
+		assert.equal(parsed.provider, "parallel");
+		assert.ok(parsed.parallelCalls > 0, "parallel was never tried");
+	});
+
+	test("placeholder PARALLEL_API_KEY does not select parallel (falls through)", async () => {
+		// A leftover "your-key" must be treated as missing: parallel is NOT
+		// tried, and since no other provider is keyed, search throws (rather
+		// than 401-ing against parallel).
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "your-key" });
+		const child = runSearch(home, `
+const calls = [];
+globalThis.fetch = async (url) => { calls.push(String(url)); throw new Error("UNEXPECTED fetch " + url); };
+try {
+	await search("query", { provider: "auto" });
+	console.log("NO_THROW");
+} catch (err) {
+	const hitParallel = calls.some((u) => u.includes("api.parallel.ai"));
+	console.log("THREW:" + err.message.split("\\n")[0] + "|parallelHit=" + hitParallel);
+}
+`);
+		assertChildSuccess(child);
+		const out = child.stdout.trim();
+		assert.ok(out.startsWith("THREW:"), `expected throw, got: ${out}`);
+		assert.match(out, /parallelHit=false/, "placeholder key must not reach parallel");
+	});
 });

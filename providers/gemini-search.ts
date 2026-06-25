@@ -13,10 +13,13 @@ export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority"
 /**
  * Built-in order used by `provider: "auto"` and as the fallback when
  * `provider: "priority"` is selected but no `providerPriority` list is
- * configured. `parallel` is intentionally NOT here (opt-in only; see
- * ROADMAP item #2).
+ * configured. `parallel` is appended last: it is only tried when exa,
+ * perplexity, and gemini are all unavailable or have failed, so a configured
+ * Parallel key acts as a safety net without disrupting the existing routing
+ * behavior. (Placeholder keys are already filtered by `normalizeApiKey`, so a
+ * leftover `"your-key"` value won't 401 here — it falls through.)
  */
-const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "perplexity", "gemini"];
+const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "perplexity", "gemini", "parallel"];
 
 const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel"]);
 
