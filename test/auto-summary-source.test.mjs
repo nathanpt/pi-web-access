@@ -77,3 +77,25 @@ test("headless: browser-launch failure keeps the curator server alive", () => {
 	assert.match(indexSrc, /instanceof BrowserOpenError[\s\S]*?err\.url[\s\S]*?return;/);
 	assert.match(indexSrc, /instanceof BrowserOpenError[\s\S]*?Curator running at \$\{err\.url\}/);
 });
+
+test("/websearch refuses on a headless config instead of launching the curator", () => {
+	// /websearch is the explicit curator-opener, but a user who's gone headless
+	// (allowCurator: off, or workflow auto-summary/none) shouldn't have a server
+	// spin up that they can't open. The handler must guard BEFORE
+	// startCuratorServer and refuse with an actionable message pointing at the
+	// web_search tool (which honors the workflow) or the re-enable toggle.
+	assert.match(indexSrc, /pi\.registerCommand\("websearch"[\s\S]*?if \(!isCuratorAllowed\(headlessConfig\)\)/);
+	assert.match(indexSrc, /\/websearch opens the curator, which that setting skips/);
+	// the guard runs before any curator server is started for this command
+	const handlerStart = indexSrc.indexOf('pi.registerCommand("websearch"');
+	const guardPos = indexSrc.indexOf("if (!isCuratorAllowed(headlessConfig))", handlerStart);
+	const serverPos = indexSrc.indexOf("startCuratorServer(", handlerStart);
+	assert.ok(guardPos > -1 && serverPos > -1 && guardPos < serverPos, "headless guard must precede startCuratorServer in /websearch");
+});
+
+test("headless browser-open hint is tailored to the current workflow", () => {
+	// The BrowserOpenError notify must NOT blindly suggest auto-summary when
+	// the user already set it. It reads the current workflow and only suggests
+	// the toggle when workflow is still summary-review.
+	assert.match(indexSrc, /wf === "summary-review"[\s\S]*?run `\/webaccess workflow auto-summary` to skip/);
+});

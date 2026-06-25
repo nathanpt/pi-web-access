@@ -2174,6 +2174,23 @@ export default function (pi: ExtensionAPI) {
 		description: "Open web search curator",
 		handler: async (args, ctx) => {
 			closeCurator();
+
+			// /websearch explicitly opens the browser curator. If the config has
+			// gone headless (allowCurator off, or workflow auto-summary/none),
+			// refuse cleanly instead of spinning up a server that can't be
+			// opened — point the user at the web_search tool (which honors the
+			// workflow and runs inline) or at the toggle to re-enable.
+			const headlessConfig = loadConfigForExtensionInit();
+			if (!isCuratorAllowed(headlessConfig)) {
+				ctx.ui.notify("Curator is disabled (allowCurator: off). Use the web_search tool for inline results, or run `/webaccess allow-curator on`.", "error");
+				return;
+			}
+			const headlessWorkflow = resolveWorkflow(headlessConfig.workflow, true, true);
+			if (headlessWorkflow !== "summary-review") {
+				ctx.ui.notify(`workflow is \`${headlessWorkflow}\` — /websearch opens the curator, which that setting skips. Use the web_search tool for inline results, or run \`/webaccess workflow summary-review\` first.`, "error");
+				return;
+			}
+
 			const sessionToken = randomUUID();
 
 			const raw = args.trim();
@@ -2397,7 +2414,13 @@ export default function (pi: ExtensionAPI) {
 				// tearing down + dumping raw xdg-open stderr.
 				if (err instanceof BrowserOpenError) {
 					console.error(`No GUI browser: ${err.message}. Curator still running at ${err.url}`);
-					ctx.ui.notify(`Curator running at ${err.url} — open it manually (headless? try /webaccess workflow auto-summary).`, "info");
+					// Tailor the hint to the current config: if workflow is already
+					// headless-friendly, don't tell the user to set what they set.
+					const wf = resolveWorkflow(loadConfigForExtensionInit().workflow, true, true);
+					const hint = wf === "summary-review"
+						? " — headless? run `/webaccess workflow auto-summary` to skip the curator"
+						: "";
+					ctx.ui.notify(`Curator running at ${err.url} — open it manually (SSH tunnel)${hint}.`, "info");
 				} else {
 					closeCurator();
 					const message = err instanceof Error ? err.message : String(err);
