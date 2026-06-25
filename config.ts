@@ -192,7 +192,7 @@ export function resolveCredentialProvenance(
 	return "missing";
 }
 
-interface CredentialSource {
+export interface CredentialSource {
 	provider: string;
 	env: string;
 	configKey: keyof RawWebSearchConfig;
@@ -206,6 +206,16 @@ const CREDENTIAL_SOURCES: CredentialSource[] = [
 	{ provider: "parallel", env: "PARALLEL_API_KEY", configKey: "parallelApiKey" },
 	{ provider: "gemini", env: "GEMINI_API_KEY", configKey: "geminiApiKey" },
 ];
+
+/** Look up the credential source record for a concrete provider name. */
+export function getCredentialSource(provider: string): CredentialSource | undefined {
+	return CREDENTIAL_SOURCES.find((s) => s.provider === provider);
+}
+
+/** All credential sources (provider → env/config-key mapping). Read-only view. */
+export function getAllCredentialSources(): readonly CredentialSource[] {
+	return CREDENTIAL_SOURCES;
+}
 
 export interface ProviderCredentialStatus {
 	provider: string;
