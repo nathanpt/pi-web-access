@@ -14,6 +14,9 @@ import {
 	saveWebSearchConfig,
 	getEffectiveConfig,
 	getProviderCredentialStatus,
+	getCredentialSource,
+	getAllCredentialSources,
+	isPlaceholderKey,
 } from "./config.js";
 
 export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel";
@@ -76,6 +79,16 @@ export function validateSearchModel(value: string): ValidationResult {
 	const normalized = value.trim();
 	if (!normalized) return { ok: false, error: "search-model value is required" };
 	if (/\s/.test(normalized)) return { ok: false, error: `search-model must not contain whitespace (got "${value}")` };
+	return { ok: true, value: normalized };
+}
+
+/** Validate an API key value for `/webaccess set-key <provider> <key>`. */
+export function validateApiKey(value: string): ValidationResult {
+	const normalized = value.trim();
+	if (!normalized) return { ok: false, error: "api key value is required" };
+	if (isPlaceholderKey(normalized)) {
+		return { ok: false, error: "that looks like a placeholder (e.g. \"your-key\"), not a real key" };
+	}
 	return { ok: true, value: normalized };
 }
 
@@ -145,13 +158,30 @@ export function formatWebAccessSummary(): string {
 	for (const s of status) {
 		lines.push(`| ${s.provider} | ${provenanceLabel(s.provenance)} | ${boolLabel(s.available)} | ${s.note ?? ""} |`);
 	}
+	// Actionable hints: for every provider whose key is missing, show BOTH
+	// ways to set it (the set-key command + the env var). This is the section
+	// that answers "how do I add an API key?" directly from the summary.
+	const hintLines: string[] = [];
+	for (const s of status) {
+		if (s.provenance !== "missing") continue;
+		const src = getCredentialSource(s.provider);
+		if (!src) continue;
+		const optional = src.mcpFallback ? " _(optional — MCP fallback works without a key)_" : "";
+		hintLines.push(`- ${s.provider}: \`/webaccess set-key ${s.provider} <key>\` or env \`${src.env}\`${optional}`);
+	}
+	if (hintLines.length > 0) {
+		lines.push("");
+		lines.push("**Setting API keys**");
+		lines.push(...hintLines);
+	}
 	lines.push("");
 	lines.push("**Browser cookies**");
 	lines.push(`- allow browser cookies: ${boolLabel(eff.allowBrowserCookies)} _(${provenanceLabel(eff.browserCookieProvenance)})_`);
 	if (eff.chromeProfile) lines.push(`- chrome profile: \`${eff.chromeProfile}\``);
 	lines.push("");
 	lines.push("_Use `/webaccess <field> <value>` to change a setting. Fields: " +
-		"provider, workflow, provider-priority, allow-browser-cookies, search-model, curator-timeout._");
+		"provider, workflow, provider-priority, allow-browser-cookies, search-model, curator-timeout. " +
+		"Set an API key with `/webaccess set-key <provider> <key>`._");
 
 	return lines.join("\n");
 }
@@ -174,6 +204,14 @@ export function handleWebAccessCommand(args: string): WebAccessResult {
 	const spaceIdx = trimmed.indexOf(" ");
 	const field = (spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx)).toLowerCase();
 	const rawValue = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1).trim();
+
+	// `set-key <provider> <key>`: writes a provider API key to the config
+	// file. Handled before the SET_FIELDS switch because its arg shape differs
+	// (provider + key, not a single field value) and because the key is a
+	// secret — the confirmation must not echo it.
+	if (field === "set-key") {
+		return handleSetKey(rawValue);
+	}
 
 	if (!SET_FIELDS.includes(field as SetField)) {
 		return {
@@ -220,4 +258,39 @@ export function handleWebAccessCommand(args: string): WebAccessResult {
 
 	saveWebSearchConfig(configUpdate);
 	return { text: formatSetConfirmation(field, result.value), wrote: true };
+}
+
+/** Concrete credential providers accepted by `/webaccess set-key`. */
+const KEY_PROVIDERS = getAllCredentialSources().map((s) => s.provider);
+
+/**
+ * Execute `/webaccess set-key <provider> <key>`. Writes the key to the config
+ * file (creating it if absent). The key is never echoed back — the
+ * confirmation only proves it was accepted, with a last-4 fingerprint so the
+ * user can sanity-check they pasted the right one.
+ */
+function handleSetKey(rawValue: string): WebAccessResult {
+	const idx = rawValue.indexOf(" ");
+	const provider = (idx === -1 ? rawValue : rawValue.slice(0, idx)).trim().toLowerCase();
+	const key = idx === -1 ? "" : rawValue.slice(idx + 1).trim();
+
+	if (!provider) {
+		return { text: `**Validation failed:** provider is required. Usage: \`/webaccess set-key <provider> <key>\`. Valid providers: ${KEY_PROVIDERS.join(", ")}.`, wrote: false };
+	}
+	const source = getCredentialSource(provider);
+	if (!source) {
+		return { text: `**Validation failed:** unknown provider \`${provider}\`. Valid: ${KEY_PROVIDERS.join(", ")}.`, wrote: false };
+	}
+	const keyResult = validateApiKey(key);
+	if (!keyResult.ok) {
+		return { text: `**Validation failed:** ${keyResult.error}`, wrote: false };
+	}
+
+	// Write via the config key (e.g. parallelApiKey), not the provider name.
+	saveWebSearchConfig({ [source.configKey]: keyResult.value } as Partial<RawWebSearchConfig>);
+	const fingerprint = keyResult.value.slice(-4);
+	return {
+		text: `**Set** \`${provider}\` API key (saved to config; ends in …${fingerprint}). Use \`/webaccess\` to verify.`,
+		wrote: true,
+	};
 }
