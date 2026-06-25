@@ -32,6 +32,52 @@ const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
 
 export interface AttributedSearchResponse extends SearchResponse {
 	provider: ResolvedSearchProvider;
+	/**
+	 * *ROADMAP item #3 (Provider Trace v1).* Read-only routing audit: which
+	 * providers were considered, which were skipped (unavailable), which
+	 * errored, and which produced the result. Undefined for code paths that
+	 * don't go through `search()` (e.g. curated/historical results).
+	 */
+	trace?: SearchTrace;
+}
+
+export type ProviderAttemptStatus = "success" | "error" | "skipped" | "no-result";
+
+export interface ProviderAttempt {
+	provider: ResolvedSearchProvider;
+	status: ProviderAttemptStatus;
+	/** Error message (status === "error") or skip reason (status === "skipped"). */
+	detail?: string;
+}
+
+export interface SearchTrace {
+	/** Effective routing mode: the provider selection that drove this search. */
+	mode: SearchProvider;
+	/** The provider that produced the result, or null if none did (failure). */
+	selected: ResolvedSearchProvider | null;
+	/** Ordered list of every provider considered, with its outcome. */
+	attempts: ProviderAttempt[];
+	/** The fallback order used (auto/priority modes); undefined for explicit
+	 * single-provider calls that don't enter the fallback loop. */
+	order?: ResolvedSearchProvider[];
+}
+
+/** Property key used to attach a {@link SearchTrace} to a thrown error. */
+const SEARCH_TRACE_KEY = "__searchTrace";
+
+/** Attach `trace` to `err` (mutates in place) so callers can recover it. */
+export function attachSearchTrace(err: unknown, trace: SearchTrace): void {
+	if (err && typeof err === "object") {
+		(err as Record<string, unknown>)[SEARCH_TRACE_KEY] = trace;
+	}
+}
+
+/** Recover a {@link SearchTrace} previously attached to a thrown error. */
+export function getSearchTrace(err: unknown): SearchTrace | undefined {
+	if (err && typeof err === "object") {
+		return (err as Record<string, unknown>)[SEARCH_TRACE_KEY] as SearchTrace | undefined;
+	}
+	return undefined;
 }
 
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -133,26 +179,50 @@ async function searchWithGemini(
 export async function search(query: string, options: FullSearchOptions = {}): Promise<AttributedSearchResponse> {
 	const config = getSearchConfig();
 	const provider = options.provider ?? config.searchProvider;
+	const attempts: ProviderAttempt[] = [];
+	const trace: SearchTrace = { mode: provider, selected: null, attempts };
 
 	if (provider === "perplexity") {
-		const result = await searchWithPerplexity(query, options);
-		return { ...result, provider: "perplexity" };
+		try {
+			const result = await searchWithPerplexity(query, options);
+			attempts.push({ provider: "perplexity", status: "success" });
+			return { ...result, provider: "perplexity", trace: { ...trace, selected: "perplexity" } };
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			attempts.push({ provider: "perplexity", status: "error", detail: errorMessage(err) });
+			attachSearchTrace(err, { ...trace, selected: null });
+			throw err;
+		}
 	}
 
 	if (provider === "gemini") {
 		const result = await searchWithGemini(query, options, true);
-		if (result) return { ...result, provider: "gemini" };
-		throw new Error(
+		if (result) {
+			attempts.push({ provider: "gemini", status: "success" });
+			return { ...result, provider: "gemini", trace: { ...trace, selected: "gemini" } };
+		}
+		attempts.push({ provider: "gemini", status: "no-result", detail: "Gemini returned no result" });
+		const err = new Error(
 			"Gemini search unavailable. Either:\n" +
 			`  1. Set GEMINI_API_KEY in ${CONFIG_PATH}\n` +
 			"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
 			"  3. Sign into gemini.google.com in a supported Chromium-based browser"
 		);
+		attachSearchTrace(err, { ...trace, selected: null });
+		throw err;
 	}
 
 	if (provider === "parallel") {
-		const result = await searchWithParallel(query, options);
-		return { ...result, provider: "parallel" };
+		try {
+			const result = await searchWithParallel(query, options);
+			attempts.push({ provider: "parallel", status: "success" });
+			return { ...result, provider: "parallel", trace: { ...trace, selected: "parallel" } };
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			attempts.push({ provider: "parallel", status: "error", detail: errorMessage(err) });
+			attachSearchTrace(err, { ...trace, selected: null });
+			throw err;
+		}
 	}
 
 	if (provider === "exa") {
@@ -165,14 +235,22 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 					"  Use provider: 'perplexity' or 'gemini', or upgrade at exa.ai/pricing"
 				);
 			}
-			if (result && "answer" in result) return { ...result, provider: "exa" };
+			if (result && "answer" in result) {
+				attempts.push({ provider: "exa", status: "success" });
+				return { ...result, provider: "exa", trace: { ...trace, selected: "exa" } };
+			}
 			if (exaApiKeyConfigured) {
 				throw new Error("Exa search returned no results.");
 			}
+			attempts.push({ provider: "exa", status: "no-result", detail: "no API key configured" });
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			if (message.toLowerCase().includes("abort")) throw err;
-			if (exaApiKeyConfigured) throw err;
+			if (exaApiKeyConfigured) {
+				attempts.push({ provider: "exa", status: "error", detail: errorMessage(err) });
+				attachSearchTrace(err, { ...trace, selected: null });
+				throw err;
+			}
 			// No API key: allow provider fallback.
 		}
 	}
@@ -180,24 +258,35 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	// Shared fallback loop for `auto`, `priority`, and the fall-through from
 	// an explicit `exa` selection that had no API key (don't retry exa there).
 	const order = resolveFallbackOrder(provider, config);
+	trace.order = order;
 	const fallbackErrors: string[] = [];
 
 	for (const candidate of order) {
-		if (!(await isCandidateAvailable(candidate))) continue;
+		if (!(await isCandidateAvailable(candidate))) {
+			attempts.push({ provider: candidate, status: "skipped", detail: "unavailable" });
+			continue;
+		}
 		try {
 			const result = await runFallbackProvider(candidate, query, options);
-			if (result) return { ...result, provider: candidate };
+			if (result) {
+				attempts.push({ provider: candidate, status: "success" });
+				return { ...result, provider: candidate, trace: { ...trace, selected: candidate } };
+			}
+			attempts.push({ provider: candidate, status: "no-result", detail: "returned no usable result" });
 		} catch (err) {
 			if (isAbortError(err)) throw err;
+			attempts.push({ provider: candidate, status: "error", detail: errorMessage(err) });
 			fallbackErrors.push(`${PROVIDER_LABELS[candidate]}: ${errorMessage(err)}`);
 		}
 	}
 
 	if (fallbackErrors.length > 0) {
-		throw new Error(`Auto provider search failed:\n  - ${fallbackErrors.join("\n  - ")}`);
+		const err = new Error(`Auto provider search failed:\n  - ${fallbackErrors.join("\n  - ")}`);
+		attachSearchTrace(err, { ...trace, selected: null });
+		throw err;
 	}
 
-	throw new Error(
+	const err = new Error(
 		"No search provider available. Either:\n" +
 		`  1. Set perplexityApiKey in ${CONFIG_PATH}\n` +
 		`  2. Set EXA_API_KEY (or exaApiKey) in ${CONFIG_PATH}\n` +
@@ -205,6 +294,8 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		"  4. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
 		"  5. Sign into gemini.google.com in a supported Chromium-based browser"
 	);
+	attachSearchTrace(err, { ...trace, selected: null });
+	throw err;
 }
 
 /**

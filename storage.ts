@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { ExtractedContent } from "./extract.js";
 import type { SearchResult } from "./providers/perplexity.js";
+import type { SearchTrace } from "./providers/gemini-search.js";
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
@@ -10,6 +11,9 @@ export interface QueryResultData {
 	results: SearchResult[];
 	error: string | null;
 	provider?: string;
+	/** Provider routing trace (ROADMAP item #3). Present when the result came
+	 * from a live `search()` call; undefined for legacy/stored entries. */
+	trace?: SearchTrace;
 }
 
 export interface StoredSearchData {
