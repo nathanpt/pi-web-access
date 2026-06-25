@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **`parallel` is now part of the default `auto` provider order.** The built-in order is now Exa → Perplexity → Gemini → Parallel. Parallel is appended last, so a configured Parallel API key acts as a safety-net fallback when the other providers are unavailable or fail; it does not disrupt existing routing for users who haven't configured it. You can still select it explicitly with `provider: "parallel"`. Previously `parallel` was opt-in only (excluded from `auto`).
+
+### Added
+- **Placeholder-key detection.** Template/placeholder API-key values (e.g. `"your-key"`, `"<your-api-key>"`, `"placeholder"`, `"xxx"`) are now treated as missing for every provider. This prevents a leftover doc-example value from being selected and then 401-ing mid-fallback — the search gracefully falls through to the next provider instead. Required for `parallel` joining the `auto` order (otherwise a placeholder `PARALLEL_API_KEY` would 401).
+- **`/webaccess` command.** Inspect the effective config (config path, routing, provider-credential provenance table, browser-cookie status) and update common settings (`provider`, `workflow`, `provider-priority`, `allow-browser-cookies`, `search-model`, `curator-timeout`) from the command line with pre-save validation. Secrets are never displayed — only provenance (`env` / `config` / `missing`). Config load/save is now centralized in a new `config.ts` (the per-provider `loadConfig()` clones are removed).
+
 ## [0.11.0] - 2026-06-24
 
 ### Added

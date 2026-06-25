@@ -25,7 +25,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | `numResults` | Results per query (default: 5, max: 20) |
 | `recencyFilter` | `day`, `week`, `month`, or `year` |
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
-| `provider` | `auto` (default), `priority`, `exa`, `perplexity`, `gemini`, or `parallel` (opt-in; not part of auto/fallback). Use `priority` to honor the `providerPriority` order |
+| `provider` | `auto` (default), `priority`, `exa`, `perplexity`, `gemini`, or `parallel`. `auto` order is Exa → Perplexity → Gemini → Parallel (last resort). Use `priority` to honor the `providerPriority` order |
 | `includeContent` | Fetch full page content from sources in background |
 | `workflow` | `none` (skip curator), `summary-review` (auto-generate summary draft after search completion, default unless `allowCurator` is false), or `auto-summary` (generate a summary without opening the curator — works headless) |
 

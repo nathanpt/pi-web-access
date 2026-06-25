@@ -114,8 +114,7 @@ When changing code, respect the patterns that make this extension reliable:
   availability and falls through gracefully. When adding or editing a provider,
   preserve the chain and the `isXAvailable()` checks — something should always
   work.
-- **`parallel` is opt-in only.** It is never added to auto-selection or default
-  fallback ordering; it must be requested explicitly with `provider: "parallel"`.
+- **`parallel` is a last-resort fallback.** It is the final entry in `DEFAULT_AUTO_ORDER` (`[exa, perplexity, gemini, parallel]`) — only tried when the other providers are unavailable or have failed. Placeholder keys are filtered by `normalizeApiKey` in `config.ts`, so a leftover `"your-key"` value falls through instead of 401-ing.
 - **Browser cookie access is off by default** (`allowBrowserCookies` /
   `PI_ALLOW_BROWSER_COOKIES=1`). Never enable it implicitly — it triggers macOS
   Keychain prompts.

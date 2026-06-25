@@ -12,6 +12,7 @@ const {
 	getEffectiveConfig,
 	normalizeApiKey,
 	normalizeOptionalString,
+	isPlaceholderKey,
 } = await import("../config.ts");
 
 test("normalizeApiKey trims and rejects empties/non-strings", () => {
@@ -155,4 +156,48 @@ test("getEffectiveConfig never exposes secret values", () => {
 	);
 	const dump = JSON.stringify(eff);
 	assert.equal(dump.includes("SECRET"), false, `secret leaked: ${dump}`);
+});
+
+// ---- placeholder-key detection (prereq for parallel-in-auto) ----
+
+test("isPlaceholderKey flags template/placeholder values", () => {
+	const flagged = [
+		"your-key", "your-key-here", "your_key", "your key", "your-api-key", "your_api_key",
+		"<your-api-key>", "<API_KEY>",
+		"placeholder", "PLACEHOLDER", "example", "example-key", "sample", "demo",
+		"dummy", "changeme", "change-me", "replace-me", "replace_me", "todo",
+		"xxx", "XXXX", "test", "foo", "bar", "baz",
+	];
+	for (const v of flagged) assert.equal(isPlaceholderKey(v), true, `expected placeholder: ${v}`);
+});
+
+test("isPlaceholderKey does NOT flag real-looking keys", () => {
+	const real = [
+		"pplx-abc123def456", "exa-9f8a7b6c5d4e3f2a1b0c",
+		"AIzaSyABCDEF1234567890", "sk-proj-abcdef0123456789",
+		"parallel-abc123", "cf-aig-xyz789",
+		"aBcDeFgHiJ123456", "key-with-uuid-550e8400-e29b-41d4-a716-446655440000",
+	];
+	for (const v of real) assert.equal(isPlaceholderKey(v), false, `expected real key: ${v}`);
+});
+
+test("normalizeApiKey treats placeholder values as missing (null)", () => {
+	assert.equal(normalizeApiKey("your-key"), null);
+	assert.equal(normalizeApiKey("  <API_KEY>  "), null);
+	assert.equal(normalizeApiKey("placeholder"), null);
+	assert.equal(normalizeApiKey("your-key-here"), null);
+	// a real key still passes through
+	assert.equal(normalizeApiKey("pplx-realkey123"), "pplx-realkey123");
+});
+
+test("placeholder key makes a provider fall through (provenance = missing)", () => {
+	// A leftover "your-key" Parallel value should NOT count as configured —
+	// this is the core fix that lets parallel join the auto order safely.
+	const status = getProviderCredentialStatus(
+		{ parallelApiKey: "your-key" },
+		{},
+	);
+	const parallel = status.find((s) => s.provider === "parallel");
+	assert.equal(parallel.provenance, "missing");
+	assert.equal(parallel.available, false);
 });
