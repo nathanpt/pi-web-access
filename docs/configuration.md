@@ -2,6 +2,8 @@
 
 All config lives in `web-search.json`, resolved with XDG precedence: `$PI_CODING_AGENT_DIR` → `$XDG_CONFIG_HOME/pi` → `~/.pi` (i.e. `~/.pi/web-search.json` by default, matching pi-core). Every field is optional.
 
+> **Prefer not to hand-edit JSON?** Run [`/webaccess`](commands.md#webaccess) to inspect the effective config (with provider status + secret provenance) and update common fields from the command line. It validates input before saving and preserves precedence (`env > config > defaults`). This page documents the full field set for both modes.
+
 ```json
 {
   "exaApiKey": "exa-...",
