@@ -59,3 +59,21 @@ test("/webaccess test-key dispatches to an async runner before the sync handler"
 	assert.match(indexSrc, /await search\("connection test", \{ provider: provider as SearchProvider \}\)/);
 	assert.match(indexSrc, /if \(hadEnv === undefined\) delete process\.env\[envVar\]/);
 });
+
+test("headless: browser-launch failure keeps the curator server alive", () => {
+	// On a headless/SSH box, xdg-open finds nothing and exits non-zero. The
+	// curator HTTP server is already up at handle.url — tearing it down on a
+	// browser-open failure strands the user (they can't even open the URL
+	// manually). openInBrowser must throw a BrowserOpenError (distinguished
+	// from server errors), and BOTH curator-open call sites must catch it
+	// WITHOUT calling closeCurator(), instead surfacing the URL.
+	assert.match(indexSrc, /export class BrowserOpenError extends Error/);
+	assert.match(indexSrc, /function summarizeLauncherStderr/);
+	// the two call sites keep the server alive on BrowserOpenError
+	const occurrences = indexSrc.split("instanceof BrowserOpenError").length - 1;
+	assert.equal(occurrences, 2, `expected 2 BrowserOpenError guards (one per call site), found ${occurrences}`);
+	// neither guard path tears down the server — assert the guard returns/
+	// notifies with the URL rather than closing.
+	assert.match(indexSrc, /instanceof BrowserOpenError[\s\S]*?err\.url[\s\S]*?return;/);
+	assert.match(indexSrc, /instanceof BrowserOpenError[\s\S]*?Curator running at \$\{err\.url\}/);
+});
