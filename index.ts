@@ -36,6 +36,7 @@ import { createRequire } from "node:module";
 import { platform } from "node:os";
 import { loadWebSearchConfig, saveWebSearchConfig } from "./config.js";
 import { existsSync } from "node:fs";
+import { handleWebAccessCommand } from "./webaccess-command.js";
 import { join } from "node:path";
 import { isPerplexityAvailable } from "./providers/perplexity.js";
 import { isExaAvailable } from "./providers/exa.js";
@@ -2474,6 +2475,26 @@ export default function (pi: ExtensionAPI) {
 				}
 				ctx.ui.notify(info, "info");
 			}
+		},
+	});
+
+	pi.registerCommand("webaccess", {
+		description: "Inspect or update pi-web-access config (no args = summary)",
+		handler: async (args, ctx) => {
+			let result;
+			try {
+				result = handleWebAccessCommand(args ?? "");
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				ctx.ui.notify(`Failed to read/write web-access config: ${message}`, "error");
+				return;
+			}
+			pi.sendMessage({
+				customType: "webaccess",
+				content: [{ type: "text", text: result.text }],
+				display: "tool",
+				details: { wrote: result.wrote },
+			}, { triggerTurn: true, deliverAs: "followUp" });
 		},
 	});
 }
