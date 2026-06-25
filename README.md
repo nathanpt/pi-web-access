@@ -164,17 +164,19 @@ upstream commits or PRs, please cite the original author's work.
 
 | File | Purpose |
 |------|---------|
-| `index.ts` | Extension entry, tool definitions, commands, widget |
+| `index.ts` | Extension entry: tool definitions, commands (`/websearch` `/curator` `/search` `/google-account` `/webaccess`), widget. Config load/save via thin wrappers over `config.ts` |
 | `extract.ts` | URL/file path routing, HTTP extraction, fallback orchestration |
 | `activity.ts` | Activity tracking for the observability widget |
 | `storage.ts` | Session-aware result storage (powers `get_search_content`) |
 | `utils.ts` | Shared formatting and error helpers |
 | `workflow.ts` | Curator workflow resolution (`/curator` on/off/none/auto-summary) |
 | `chrome-cookies.ts` | macOS/Linux Chromium-based cookie extraction (Keychain/secret-tool + SQLite) |
+| `config.ts` | **Centralized config owner** — load/save/normalize/redaction/precedence/status/validation for `~/.pi/web-search.json`; `normalizeApiKey` + placeholder-key detection; `getEffectiveConfig` + `getProviderCredentialStatus` power `/webaccess` |
+| `webaccess-command.ts` | Pure validation + formatting for the `/webaccess` command (provider/workflow/provider-priority/allow-browser-cookies/search-model/curator-timeout) |
 | `providers/exa.ts` | Exa.ai search provider — direct API and MCP proxy, budget tracking |
 | `providers/perplexity.ts` | Perplexity API client with rate limiting |
 | `providers/parallel.ts` | Parallel search provider — `api.parallel.ai` web search, included as the last fallback in `auto` mode |
-| `providers/gemini-search.ts` | Search routing across Exa, Perplexity, Gemini API, Gemini Web |
+| `providers/gemini-search.ts` | Search routing across Exa, Perplexity, Gemini, Parallel — shared fallback loop (`DEFAULT_AUTO_ORDER = [exa, perplexity, gemini, parallel]`); Provider Trace (`SearchTrace`, `attachSearchTrace`/`getSearchTrace`) |
 | `providers/gemini-api.ts` | Gemini REST API client (generateContent) |
 | `providers/gemini-web.ts` | Gemini Web client (cookie auth, StreamGenerate) |
 | `providers/gemini-web-config.ts` | Gemini Web profile and browser-cookie opt-in config |
