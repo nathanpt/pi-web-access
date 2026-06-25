@@ -325,15 +325,49 @@ function closeCurator(): void {
 	}
 }
 
+/**
+ * Thrown by {@link openInBrowser} when no GUI browser could be launched
+ * (e.g. headless/SSH box where `xdg-open` finds nothing). Distinct from a
+ * server-start failure: the curator HTTP server is already running fine —
+ * only the auto-open failed — so callers catch this specifically and keep
+ * the server alive instead of tearing it down.
+ */
+export class BrowserOpenError extends Error {
+	readonly url: string;
+	constructor(url: string, detail: string) {
+		super(detail);
+		this.name = "BrowserOpenError";
+		this.url = url;
+	}
+}
+
+/** Collapse noisy launcher stderr (xdg-open dumps ~6 "not found" lines)
+ * into a single readable line. Keeps the tail line that states the real
+ * problem ("no method available for opening …"). */
+function summarizeLauncherStderr(stderr: string): string {
+	const lines = stderr.split("\n").map((l) => l.trim()).filter(Boolean);
+	if (lines.length === 0) return "launcher exited non-zero with no output";
+	// Prefer the summary line xdg-open prints last.
+	const summary = lines.find((l) => /no method available|cannot open|no applications?/i.test(l));
+	return summary ?? lines[lines.length - 1];
+}
+
 async function openInBrowser(pi: ExtensionAPI, url: string): Promise<void> {
 	const plat = platform();
-	const result = plat === "darwin"
-		? await pi.exec("open", [url])
-		: plat === "win32"
-			? await pi.exec("cmd", ["/c", "start", "", url])
-			: await pi.exec("xdg-open", [url]);
+	let result;
+	try {
+		result = plat === "darwin"
+			? await pi.exec("open", [url])
+			: plat === "win32"
+				? await pi.exec("cmd", ["/c", "start", "", url])
+				: await pi.exec("xdg-open", [url]);
+	} catch (err) {
+		// Launcher binary itself missing/unexecutable.
+		const detail = err instanceof Error ? err.message : String(err);
+		throw new BrowserOpenError(url, `no browser launcher available (${detail})`);
+	}
 	if (result.code !== 0) {
-		throw new Error(result.stderr || `Failed to open browser (exit code ${result.code})`);
+		throw new BrowserOpenError(url, summarizeLauncherStderr(result.stderr || ""));
 	}
 }
 
@@ -1086,6 +1120,25 @@ export default function (pi: ExtensionAPI) {
 			}
 			await openInBrowser(pi, handle.url);
 		} catch (err) {
+			// A browser-launch failure is NOT a curator failure: the HTTP server
+			// is up at handle.url. Keep it alive so the user can open the URL
+			// manually (SSH tunnel, etc.); the watchdog timeout reaps it. Only
+			// tear down for genuine server/startup errors.
+			if (err instanceof BrowserOpenError) {
+				console.error(`No GUI browser: ${err.message}. Curator still running at ${err.url}`);
+				pc.onUpdate?.({
+					content: [{ type: "text", text: "Curator running — open the URL below manually (headless?)." }],
+					details: {
+						phase: pc.phase === "searching" ? "searching" : "curating",
+						progress: 0.5,
+						curatorUrl: err.url,
+						timeoutSeconds: pc.timeoutSeconds,
+						shortcut: curateKey,
+						headlessNoBrowser: true,
+					},
+				});
+				return;
+			}
 			const message = err instanceof Error ? err.message : String(err);
 			console.error(`Failed to open curator UI: ${message}`);
 			if (pendingCurate === pc || (handle && activeCurator === handle)) {
@@ -1485,6 +1538,7 @@ export default function (pi: ExtensionAPI) {
 				cancelled?: boolean;
 				cancelReason?: string;
 				curatorUrl?: string;
+				headlessNoBrowser?: boolean;
 				timeoutSeconds?: number;
 				shortcut?: string;
 				summary?: {
@@ -1509,6 +1563,9 @@ export default function (pi: ExtensionAPI) {
 					const lines = [theme.fg("accent", phaseText)];
 					if (details?.curatorUrl) {
 						lines.push(theme.fg("muted", `  ${details.curatorUrl}`));
+					}
+					if (details?.headlessNoBrowser) {
+						lines.push(theme.fg("warn", "  no GUI browser detected — open the URL above (SSH tunnel) or use auto-summary"));
 					}
 					const timeout = typeof details?.timeoutSeconds === "number" ? details.timeoutSeconds : undefined;
 					const shortcut = typeof details?.shortcut === "string" ? details.shortcut : curateKey;
@@ -2334,9 +2391,18 @@ export default function (pi: ExtensionAPI) {
 					if (activeCurator === handle) handle.searchesDone();
 				}
 			} catch (err) {
-				closeCurator();
-				const message = err instanceof Error ? err.message : String(err);
-				ctx.ui.notify(`Failed to open curator: ${message}`, "error");
+				// Browser-launch failure is non-fatal here too: the curator server is
+				// running at handle.url. Keep it up (the background search loop +
+				// watchdog continue) and point the user at the URL instead of
+				// tearing down + dumping raw xdg-open stderr.
+				if (err instanceof BrowserOpenError) {
+					console.error(`No GUI browser: ${err.message}. Curator still running at ${err.url}`);
+					ctx.ui.notify(`Curator running at ${err.url} — open it manually (headless? try /webaccess workflow auto-summary).`, "info");
+				} else {
+					closeCurator();
+					const message = err instanceof Error ? err.message : String(err);
+					ctx.ui.notify(`Failed to open curator: ${message}`, "error");
+				}
 			}
 		},
 	});
