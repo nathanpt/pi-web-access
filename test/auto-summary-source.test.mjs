@@ -39,3 +39,11 @@ test("docs document auto-summary", () => {
 	assert.match(toolsDocSrc, /workflow: "auto-summary"/);
 	assert.match(commandsDocSrc, /generate a summary without opening the curator/);
 });
+
+test("/webaccess renders without triggering a model follow-up turn", () => {
+	// /webaccess is a terminal/CLI-only command: it renders its own output via
+	// display: "tool" but must NOT set triggerTurn: true, or the model wakes up
+	// and appends commentary to a purely informational dump. Match the
+	// silent-render shape used by /curator and /google-account (success path).
+	assert.match(indexSrc, /pi\.registerCommand\("webaccess"[\s\S]*?customType: "webaccess"[\s\S]*?display: "tool"[\s\S]*?\}, \{ triggerTurn: false, deliverAs: "followUp" \}\);/);
+});

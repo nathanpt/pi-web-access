@@ -2108,7 +2108,7 @@ export default function (pi: ExtensionAPI) {
 					content: payload.content,
 					display: "tool",
 					details: payload.details,
-				}, { triggerTurn: true, deliverAs: "followUp" });
+				}, { triggerTurn: false, deliverAs: "followUp" });
 			}
 
 			try {
@@ -2384,7 +2384,7 @@ export default function (pi: ExtensionAPI) {
 					content: [{ type: "text", text: "Gemini Web browser cookie access is disabled. Set allowBrowserCookies: true in ~/.pi/web-search.json to enable it." }],
 					display: "tool",
 					details: { available: false, cookieAccessAllowed: false },
-				}, { triggerTurn: true, deliverAs: "followUp" });
+				}, { triggerTurn: false, deliverAs: "followUp" });
 				return;
 			}
 
@@ -2395,7 +2395,7 @@ export default function (pi: ExtensionAPI) {
 					content: [{ type: "text", text: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser." }],
 					display: "tool",
 					details: { available: false, cookieAccessAllowed: true },
-				}, { triggerTurn: true, deliverAs: "followUp" });
+				}, { triggerTurn: false, deliverAs: "followUp" });
 				return;
 			}
 
@@ -2409,7 +2409,7 @@ export default function (pi: ExtensionAPI) {
 				content: [{ type: "text", text }],
 				display: "tool",
 				details: { available: true, email: email ?? null },
-			}, { triggerTurn: true, deliverAs: "followUp" });
+			}, { triggerTurn: false, deliverAs: "followUp" });
 		},
 	});
 
@@ -2495,7 +2495,7 @@ export default function (pi: ExtensionAPI) {
 				content: [{ type: "text", text: result.text }],
 				display: "tool",
 				details: { wrote: result.wrote },
-			}, { triggerTurn: true, deliverAs: "followUp" });
+			}, { triggerTurn: false, deliverAs: "followUp" });
 		},
 	});
 }
