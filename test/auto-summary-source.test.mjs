@@ -47,3 +47,15 @@ test("/webaccess renders without triggering a model follow-up turn", () => {
 	// silent-render shape used by /curator and /google-account (success path).
 	assert.match(indexSrc, /pi\.registerCommand\("webaccess"[\s\S]*?customType: "webaccess"[\s\S]*?display: "tool"[\s\S]*?\}, \{ triggerTurn: false, deliverAs: "followUp" \}\);/);
 });
+
+test("/webaccess test-key dispatches to an async runner before the sync handler", () => {
+	// test-key makes a live network call, so it can't go through the pure/
+	// synchronous handleWebAccessCommand. index.ts must intercept the
+	// "test-key" first token and route to runKeyTest (which calls search()).
+	assert.match(indexSrc, /firstToken === "test-key"/);
+	assert.match(indexSrc, /result = await runKeyTest\(/);
+	// the runner uses the shared search router with a forced provider, and
+	// restores any ephemeral env var it set in a finally block.
+	assert.match(indexSrc, /await search\("connection test", \{ provider: provider as SearchProvider \}\)/);
+	assert.match(indexSrc, /if \(hadEnv === undefined\) delete process\.env\[envVar\]/);
+});
