@@ -796,6 +796,7 @@ export default function (pi: ExtensionAPI) {
 						answer: r.answer || null,
 						sources: r.results.map(s => ({ title: s.title, url: s.url })),
 						error: r.error,
+							trace: r.trace ?? null,
 					})),
 				} : {}),
 				...((opts.workflow && hasApprovedSummary)
@@ -953,7 +954,7 @@ export default function (pi: ExtensionAPI) {
 							? pc.defaultProvider
 							: normalizedProvider;
 						try {
-							const { answer, results, inlineContent, provider: actualProvider } = await search(query, {
+							const { answer, results, inlineContent, provider: actualProvider, trace } = await search(query, {
 								provider: requestedProvider,
 								numResults: pc.numResults,
 								recencyFilter: pc.recencyFilter,
@@ -962,7 +963,7 @@ export default function (pi: ExtensionAPI) {
 								signal: addSearchSignal,
 							});
 							if (pendingCurate !== pc) throw new Error("Curator session is no longer active.");
-							pc.searchResults.set(queryIndex, { query, answer, results, error: null, provider: actualProvider });
+							pc.searchResults.set(queryIndex, { query, answer, results, error: null, provider: actualProvider, trace });
 							if (inlineContent) pc.allInlineContent.push(...inlineContent);
 							return {
 								answer,
@@ -1232,7 +1233,7 @@ export default function (pi: ExtensionAPI) {
 						});
 						const requestedProvider = pc.defaultProvider;
 						try {
-							const { answer, results, inlineContent, provider } = await search(queryList[qi], {
+							const { answer, results, inlineContent, provider, trace } = await search(queryList[qi], {
 								provider: requestedProvider,
 								numResults: params.numResults,
 								recencyFilter: params.recencyFilter,
@@ -1241,7 +1242,7 @@ export default function (pi: ExtensionAPI) {
 								signal: searchSignal,
 							});
 							if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
-							searchResults.set(qi, { query: queryList[qi], answer, results, error: null, provider });
+							searchResults.set(qi, { query: queryList[qi], answer, results, error: null, provider, trace });
 							if (inlineContent) allInlineContent.push(...inlineContent);
 							if (activeCurator) {
 								activeCurator.pushResult(qi, {
