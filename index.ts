@@ -9,7 +9,7 @@ import { clearCloneCache } from "./extractors/github-extract.js";
 import { search, type SearchProvider, type ResolvedSearchProvider } from "./providers/gemini-search.js";
 import { executeCodeSearch } from "./providers/code-search.js";
 import type { SearchResult } from "./providers/perplexity.js";
-import { formatSeconds, getWebSearchConfigDir, getWebSearchConfigPath } from "./utils.js";
+import { formatSeconds } from "./utils.js";
 import {
 	clearResults,
 	deleteResult,
@@ -34,7 +34,8 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { platform } from "node:os";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { loadWebSearchConfig, saveWebSearchConfig } from "./config.js";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { isPerplexityAvailable } from "./providers/perplexity.js";
 import { isExaAvailable } from "./providers/exa.js";
@@ -48,8 +49,6 @@ import {
 	type WebSearchConfig,
 	type WebSearchWorkflow,
 } from "./workflow.js";
-
-const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
 
 interface ProviderAvailability {
 	perplexity: boolean;
@@ -65,33 +64,17 @@ interface CuratorBootstrap {
 	timeoutSeconds: number;
 }
 
+// Config load/save are centralized in `config.ts`; these are thin local
+// wrappers so call sites in this file keep their existing names/types.
+// `loadConfig` caches the parsed file process-wide; `saveConfig` merges +
+// writes + invalidates that cache (previously providers cached independently
+// and never invalidated — fixed via the shared cache in `config.ts`).
 function loadConfig(): WebSearchConfig {
-	if (!existsSync(WEB_SEARCH_CONFIG_PATH)) return {};
-	const raw = readFileSync(WEB_SEARCH_CONFIG_PATH, "utf-8");
-	try {
-		return JSON.parse(raw) as WebSearchConfig;
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${WEB_SEARCH_CONFIG_PATH}: ${message}`);
-	}
+	return loadWebSearchConfig() as WebSearchConfig;
 }
 
 function saveConfig(updates: Partial<WebSearchConfig>): void {
-	let config: Record<string, unknown> = {};
-	if (existsSync(WEB_SEARCH_CONFIG_PATH)) {
-		const raw = readFileSync(WEB_SEARCH_CONFIG_PATH, "utf-8");
-		try {
-			config = JSON.parse(raw) as Record<string, unknown>;
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			throw new Error(`Failed to parse ${WEB_SEARCH_CONFIG_PATH}: ${message}`);
-		}
-	}
-
-	Object.assign(config, updates);
-	const dir = getWebSearchConfigDir();
-	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-	writeFileSync(WEB_SEARCH_CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
+	saveWebSearchConfig(updates);
 }
 
 const DEFAULT_SHORTCUTS = { curate: "ctrl+shift+s", activity: "ctrl+shift+w" };
