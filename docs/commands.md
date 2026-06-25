@@ -12,6 +12,7 @@ Inspect or update the extension's config without hand-editing `~/.pi/web-search.
 /webaccess workflow none                                # raw results, no curator
 /webaccess workflow summary-review                       # open curator with summary draft (default)
 /webaccess workflow auto-summary                         # headless summary, no browser
+/webaccess allow-curator off                            # hard-disable the browser curator (headless-only)
 /webaccess provider-priority exa,perplexity,gemini       # order tried when provider is "priority"
 /webaccess set-key parallel <key>                       # store a provider API key (never echoed)
 /webaccess clear-key parallel                           # remove a provider API key from config

@@ -29,7 +29,7 @@ https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 
 **Smart Fallbacks** — Every capability has a fallback chain, so something always works. Search tries Exa (direct API if keyed, MCP if not), then Perplexity, then Gemini API, then Gemini Web when browser cookies are enabled — or define your **own order** with `provider: "priority"`. YouTube tries Gemini Web → API → Perplexity. Blocked pages retry through Jina Reader and Gemini extraction.
 
-**Headless-Friendly** — `workflow: "auto-summary"` generates a model summary inline without ever opening a browser, so it works in `-p` / CI / SSH sessions. Pair with `allowCurator: false` for a fully headless setup.
+**Headless-Friendly** — `workflow: "auto-summary"` generates a model summary inline without ever opening a browser, so it works in `-p` / CI / SSH sessions. Pair with `allowCurator: false` for a fully headless setup. Both are settable from the command: `/webaccess workflow auto-summary` and `/webaccess allow-curator off`.
 
 **Billing Safety** — Curator summaries respect Pi's `enabledModels` allowlist when configured, and fall back to a deterministic no-billing summary instead of charging you for an unrelated catalog model.
 
