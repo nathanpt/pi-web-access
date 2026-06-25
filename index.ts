@@ -34,9 +34,9 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { platform } from "node:os";
-import { loadWebSearchConfig, saveWebSearchConfig } from "./config.js";
+import { loadWebSearchConfig, saveWebSearchConfig, getCredentialSource, clearWebSearchConfigCache } from "./config.js";
 import { existsSync } from "node:fs";
-import { handleWebAccessCommand } from "./webaccess-command.js";
+import { handleWebAccessCommand, parseTestKeyArgs } from "./webaccess-command.js";
 import { join } from "node:path";
 import { isPerplexityAvailable } from "./providers/perplexity.js";
 import { isExaAvailable } from "./providers/exa.js";
@@ -171,6 +171,55 @@ function resolveProvider(
 		return available.perplexity ? "perplexity" : "gemini";
 	}
 	return provider;
+}
+
+/**
+ * Execute `/webaccess test-key <provider> [key]`: dry-run a real provider
+ * search to confirm a key works. With a candidate `[key]`, the key is tested
+ * ephemerally via the process env (never written to config) and restored in
+ * `finally`. Without `[key]`, the currently-configured key is tested. Uses
+ * the top-level `search` router with a forced concrete provider, which throws
+ * on failure — caught and surfaced as a readable diagnostic.
+ */
+async function runKeyTest(rawValue: string): Promise<{ text: string; wrote: boolean }> {
+	const parsed = parseTestKeyArgs(rawValue);
+	if (!parsed.ok) {
+		return { text: `**Validation failed:** ${parsed.error}`, wrote: false };
+	}
+	const { provider, candidateKey } = parsed.value;
+	const source = getCredentialSource(provider)!;
+
+	// Ephemeral env injection: if a candidate key was given, set the provider's
+	// env var for this call only and restore the prior value afterwards.
+	// Providers read the key at call time; clearWebSearchConfigCache() makes the
+	// change visible to a cached config layer. Saved-key tests skip this.
+	const envVar = source.env;
+	const hadEnv = process.env[envVar];
+	if (candidateKey) {
+		process.env[envVar] = candidateKey;
+		clearWebSearchConfigCache();
+	}
+	try {
+		const res = await search("connection test", { provider: provider as SearchProvider });
+		const n = res.results?.length ?? 0;
+		const keyLabel = candidateKey ? "candidate key" : "configured key";
+		return {
+			text: `**OK** \`${provider}\` ${keyLabel} works — the provider returned ${n} result(s).`,
+			wrote: false,
+		};
+	} catch (err) {
+		const detail = err instanceof Error ? err.message : String(err);
+		return {
+			text: `**Failed** \`${provider}\` test: ${detail.split("\n")[0]}`,
+			wrote: false,
+		};
+	} finally {
+		if (candidateKey) {
+			if (hadEnv === undefined) delete process.env[envVar];
+			else process.env[envVar] = hadEnv;
+			clearWebSearchConfigCache();
+		}
+	}
 }
 
 const pendingFetches = new Map<string, AbortController>();
@@ -2484,7 +2533,15 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			let result;
 			try {
-				result = handleWebAccessCommand(args ?? "");
+				// `test-key` makes a live network call, so it can't go through the
+				// pure/synchronous handleWebAccessCommand. Intercept it here and
+				// dispatch to the async runner; everything else is sync.
+				const firstToken = (args ?? "").trim().split(/\s+/)[0]?.toLowerCase();
+				if (firstToken === "test-key") {
+					result = await runKeyTest((args ?? "").trim().slice("test-key".length).trim());
+				} else {
+					result = handleWebAccessCommand(args ?? "");
+				}
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				ctx.ui.notify(`Failed to read/write web-access config: ${message}`, "error");

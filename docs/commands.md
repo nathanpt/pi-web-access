@@ -6,19 +6,35 @@ Inspect or update the extension's config without hand-editing `~/.pi/web-search.
 
 ```
 /webaccess                                              # show effective config + provider status
+/webaccess help                                         # full reference page (also: -h, --help)
 /webaccess provider perplexity                          # set default search provider
 /webaccess provider auto                                # back to built-in auto order
 /webaccess workflow none                                # raw results, no curator
 /webaccess workflow summary-review                       # open curator with summary draft (default)
 /webaccess workflow auto-summary                         # headless summary, no browser
 /webaccess provider-priority exa,perplexity,gemini       # order tried when provider is "priority"
+/webaccess set-key parallel <key>                       # store a provider API key (never echoed)
+/webaccess clear-key parallel                           # remove a provider API key from config
 /webaccess allow-browser-cookies on                      # enable Chromium cookie extraction
 /webaccess allow-browser-cookies off
 /webaccess search-model gemini-2.5-flash                 # override the web_search model
 /webaccess curator-timeout 45                            # curator idle timeout (seconds, 1–600)
+/webaccess test-key parallel                             # dry-run a real search to confirm the configured key works
+/webaccess test-key parallel sk-candidate-1234           # test a candidate key without saving it
+/webaccess export                                        # print config as JSON (secrets redacted)
 ```
 
 Every set runs through validation before writing — unknown providers, bad model patterns, malformed priority lists, and out-of-range timeouts are rejected without touching the file. Writes preserve the existing config and clear the in-memory cache, so the change is visible to providers immediately. Precedence (`env > config > defaults`) is preserved: a value set via env var is shown as `env` and is not overwritten by a `/webaccess set`.
+
+`set-key` writes a provider API key to the config file (creating it if absent); the key is validated and never echoed back — the confirmation shows only a last-4 fingerprint. Placeholder values (`your-key`, `<...>`) are rejected so they can't silently fail mid-fallback. When a provider's key is missing, the summary prints a **Setting API keys** section showing both ways to supply it (`set-key` or the env var); the section hides once a key is set.
+
+`test-key` dry-runs a real provider search to confirm a key works. With no key argument it tests the currently-configured key (env or config); with an extra argument it tests a candidate key ephemerally via the process env — nothing is written to disk, and the prior env value is restored afterwards. Useful for catching typos or expired keys before relying on them; each run costs one provider API call.
+
+`clear-key` removes a provider's key from the config file. It is provenance-aware: a key set via env var can't be cleared here (the process env isn't ours to mutate), so it reports which variable to unset instead.
+
+`export` prints the config as JSON with every `*ApiKey` field masked to its provenance (`<redacted: env>` / `<redacted: config>`); non-secret fields are shown verbatim. Safe to share, diff, or back up — secrets never appear.
+
+`doctor` runs config-consistency diagnostics and surfaces latent misconfigurations the status table can't express: `provider: priority` with an empty/missing `providerPriority`; a default or prioritized concrete provider whose key is missing (it would be skipped or fail at search time); a saved key that looks like a placeholder (`your-key`, `<...>`); and `workflow: summary-review` paired with `allowCurator: false` (the workflow silently resolves to `none`). Each finding includes a one-line `Fix:` command. It does not yet check `search-model` against `enabledModels` (billing scope) — that needs host context.
 
 See also: [Configuration](configuration.md) for the full field reference.
 

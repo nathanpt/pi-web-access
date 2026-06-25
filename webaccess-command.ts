@@ -17,6 +17,7 @@ import {
 	getCredentialSource,
 	getAllCredentialSources,
 	isPlaceholderKey,
+	loadWebSearchConfig,
 } from "./config.js";
 
 export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel";
@@ -191,14 +192,225 @@ function formatSetConfirmation(field: string, value: unknown): string {
 	return `**Updated** \`${field}\` → \`${display}\``;
 }
 
+/** Concrete credential providers accepted by `/webaccess set-key`. */
+const KEY_PROVIDERS = getAllCredentialSources().map((s) => s.provider);
+
+/**
+ * Render a complete reference page for `/webaccess`. Surfaces every field
+ * with its accepted values, plus `set-key`, so users have a one-stop answer
+ * to "what can this command do?" without reading the docs.
+ */
+export function formatWebAccessHelp(): string {
+	const lines: string[] = [];
+	lines.push("**/webaccess** — inspect or update pi-web-access config.");
+	lines.push("");
+	lines.push("```");
+	lines.push("/webaccess                                            # show summary (default)");
+	lines.push("/webaccess help                                       # this page (also: -h, --help)");
+	lines.push("");
+	lines.push("# routing");
+	lines.push("/webaccess provider <auto|priority|exa|perplexity|gemini|parallel>");
+	lines.push("/webaccess provider-priority <exa,perplexity,gemini,parallel>   # order for 'priority'");
+	lines.push("/webaccess workflow <none|summary-review|auto-summary>");
+	lines.push("/webaccess search-model <model-id>                              # '' to clear");
+	lines.push("/webaccess curator-timeout <1-600>                              # seconds");
+	lines.push("");
+	lines.push("# credentials");
+	lines.push(`/webaccess set-key <${KEY_PROVIDERS.join("|")}> <key>              # writes config, never echoed`);
+	lines.push(`/webaccess clear-key <${KEY_PROVIDERS.join("|")}>                 # removes key from config`);
+	lines.push(`/webaccess test-key <${KEY_PROVIDERS.join("|")}> [key]             # dry-run a real API call (uses saved key if [key] omitted)`);
+	lines.push("/webaccess allow-browser-cookies <on|off>                       # Gemini Web cookie auth");
+	lines.push("");
+	lines.push("# utilities");
+	lines.push("/webaccess export                                        # redacted JSON dump for sharing");
+	lines.push("/webaccess doctor                                        # config-consistency diagnostics");
+	lines.push("```");
+	lines.push("");
+	lines.push("Precedence: `env > config > defaults`. A value set via env shows as `env` and is not overwritten by a set. Secrets are never displayed — only provenance.");
+	lines.push("");
+	lines.push("_See also: `docs/commands.md` and `docs/configuration.md`._");
+	return lines.join("\n");
+}
+
+/** Args that request the help page (case-insensitive). */
+const HELP_ARGS = new Set(["help", "-h", "--help"]);
+
+/**
+ * Render the raw config as JSON with every `*ApiKey` field redacted to a
+ * provenance marker, for backup/sharing/diffing. Non-secret fields are shown
+ * verbatim. The config path is included as a comment line so the dump is
+ * self-describing. Safe to share — secrets never appear.
+ */
+export function formatWebAccessExport(): string {
+	const raw = loadWebSearchConfig() as Record<string, unknown>;
+	const eff = getEffectiveConfig();
+	const provenance = new Map<string, string>();
+	for (const s of getProviderCredentialStatus(raw)) {
+		provenance.set(getCredentialSource(s.provider)?.configKey as string, s.provenance);
+	}
+	const redacted: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(raw)) {
+		if (/ApiKey$/i.test(k)) {
+			const prov = provenance.get(k);
+			redacted[k] = prov ? `<redacted: ${prov}>` : "<redacted>";
+		} else {
+			redacted[k] = v;
+		}
+	}
+	const body = Object.keys(redacted).length === 0 ? "{}" : JSON.stringify(redacted, null, 2);
+	const fence = "```";
+	return `**Export** (config file: ${eff.configPath}):\n\n${fence}json\n${body}\n${fence}`;
+}
+
+/** A single doctor finding. `severity` drives rendering; `fix` is optional. */
+export interface DoctorFinding {
+	severity: "error" | "warn" | "ok";
+	/** Short label for the check (shown in the report). */
+	check: string;
+	/** Human-readable description of the finding. */
+	detail: string;
+	/** Optional one-liner command that resolves it. */
+	fix?: string;
+}
+
+/**
+ * Run config-consistency diagnostics. Pure: derived from the effective config
+ * + credential status + raw file values (to catch placeholder keys). Surfaces
+ * latent misconfigurations the summary can't express — values that look set
+ * but will be silently ignored, skipped, or 401 at call time.
+ *
+ * Note: does NOT check `summaryModel` against `enabledModels` (billing scope)
+ * — that needs the host's cwd/trust context and is deferred.
+ */
+export function runDoctor(): DoctorFinding[] {
+	const findings: DoctorFinding[] = [];
+	const eff = getEffectiveConfig();
+	const status = getProviderCredentialStatus();
+	const availableByProvider = new Map(status.map((s) => [s.provider, s.available]));
+	const raw = loadWebSearchConfig() as Record<string, unknown>;
+
+	// 1. provider=priority requires a non-empty, concrete providerPriority list.
+	if (eff.provider === "priority") {
+		const pp = eff.providerPriority;
+		const isEmpty = !Array.isArray(pp) || pp.length === 0;
+		if (isEmpty) {
+			findings.push({
+				severity: "error",
+				check: "provider=priority",
+				detail: "default provider is `priority` but `providerPriority` is unset/empty — searches fall back to the built-in auto order silently.",
+				fix: "/webaccess provider-priority exa,perplexity,gemini,parallel",
+			});
+		}
+	}
+
+	// 2. Any selected/prioritized concrete provider that is unavailable will be
+	//    skipped (priority) or fail (forced). Exa is always available (MCP
+	//    fallback) so it never trips this.
+	const concreteSelected = new Set<string>();
+	if (typeof eff.provider === "string" && KEY_PROVIDERS.includes(eff.provider)) {
+		concreteSelected.add(eff.provider);
+	}
+	if (Array.isArray(eff.providerPriority)) {
+		for (const p of eff.providerPriority as unknown[]) {
+			if (typeof p === "string" && KEY_PROVIDERS.includes(p)) concreteSelected.add(p);
+		}
+	}
+	for (const provider of concreteSelected) {
+		if (!availableByProvider.get(provider)) {
+			findings.push({
+				severity: "warn",
+				check: `provider: ${provider}`,
+				detail: `\`${provider}\` is selected${eff.provider === provider ? " as the default" : " in providerPriority"} but has no API key — it will be skipped/fail at search time.`,
+				fix: `/webaccess set-key ${provider} <key>`,
+			});
+		}
+	}
+
+	// 3. A saved key that looks like a placeholder slipped through (hand-edit,
+	//    migration, pre-validation file). It reads as "set" but will 401.
+	for (const source of getAllCredentialSources()) {
+		const v = raw[source.configKey];
+		if (typeof v === "string" && v.trim() && isPlaceholderKey(v)) {
+			findings.push({
+				severity: "error",
+				check: `key: ${source.provider}`,
+				detail: `the saved \`${String(source.configKey)}\` looks like a placeholder (\`${v.trim()}\`) — it will be treated as set but fail authentication.`,
+				fix: `/webaccess set-key ${source.provider} <real-key>`,
+			});
+		}
+	}
+
+	// 4. workflow=summary-review is silently downgraded to `none` when the
+	//    curator is disabled — the stored value is inert.
+	if (eff.workflow === "summary-review" && !eff.allowCurator) {
+		findings.push({
+			severity: "warn",
+			check: "workflow vs curator",
+				detail: "`workflow` is `summary-review` but `allowCurator` is false — it resolves to `none` (raw results). Use `auto-summary` for a headless summary.",
+			fix: "/webaccess workflow auto-summary",
+		});
+	}
+
+	return findings;
+}
+
+/** Render doctor findings as markdown. Emits a clean bill of health when empty. */
+export function formatDoctor(): string {
+	const findings = runDoctor();
+	if (findings.length === 0) {
+		return "**doctor:** no config issues found. :white_check_mark:";
+	}
+	const icon = { error: ":x:", warn: ":warning:", ok: ":white_check_mark:" } as const;
+	const lines: string[] = ["**doctor** — config diagnostics:", ""];
+	for (const f of findings) {
+		let line = `${icon[f.severity]} **${f.check}** — ${f.detail}`;
+		if (f.fix) line += ` \`Fix: ${f.fix}\``;
+		lines.push(line);
+	}
+	return lines.join("\n");
+}
+
+/** Parsed `/webaccess test-key` args. `candidateKey` is set when testing an
+ * arbitrary key without saving it; omitted means test the configured key. */
+export interface KeyTestArgs {
+	provider: string;
+	candidateKey?: string;
+}
+
+/**
+ * Parse `/webaccess test-key <provider> [key]` into a provider + optional
+ * candidate key. Pure — does no network I/O (the live call happens in
+ * `index.ts`). Rejects `auto`/`priority` (not credential providers) and
+ * placeholder key values. Returns an `error` string on invalid input.
+ */
+export function parseTestKeyArgs(rawValue: string): { ok: true; value: KeyTestArgs } | { ok: false; error: string } {
+	rawValue = rawValue.trim();
+	const idx = rawValue.indexOf(" ");
+	const provider = (idx === -1 ? rawValue : rawValue.slice(0, idx)).trim().toLowerCase();
+	const key = idx === -1 ? "" : rawValue.slice(idx + 1).trim();
+	if (!provider) {
+		return { ok: false, error: `provider is required. Usage: \`/webaccess test-key <provider> [key]\`. Valid: ${KEY_PROVIDERS.join(", ")}.` };
+	}
+	if (!getCredentialSource(provider)) {
+		return { ok: false, error: `unknown provider \`${provider}\`. Valid: ${KEY_PROVIDERS.join(", ")}.` };
+	}
+	if (key) {
+		const kr = validateApiKey(key);
+		if (!kr.ok) return { ok: false, error: kr.error ?? "invalid key" };
+		return { ok: true, value: { provider, candidateKey: kr.value as string } };
+	}
+	return { ok: true, value: { provider } };
+}
+
 /**
  * Parse and execute a `/webaccess` invocation. `args` is the raw arg string.
  * Pure for reads/invalid; a write occurs only when validation passes.
  */
 export function handleWebAccessCommand(args: string): WebAccessResult {
 	const trimmed = args.trim();
-	if (!trimmed) {
-		return { text: formatWebAccessSummary(), wrote: false };
+	if (!trimmed || HELP_ARGS.has(trimmed.toLowerCase())) {
+		if (!trimmed) return { text: formatWebAccessSummary(), wrote: false };
+		return { text: formatWebAccessHelp(), wrote: false };
 	}
 
 	const spaceIdx = trimmed.indexOf(" ");
@@ -211,6 +423,23 @@ export function handleWebAccessCommand(args: string): WebAccessResult {
 	// secret — the confirmation must not echo it.
 	if (field === "set-key") {
 		return handleSetKey(rawValue);
+	}
+
+	// `clear-key <provider>`: removes a provider API key from the config file.
+	// Symmetric counterpart to `set-key`. Cannot unset env vars — if the key is
+	// sourced from env, the user is told to unset it themselves.
+	if (field === "clear-key") {
+		return handleClearKey(rawValue);
+	}
+
+	// `export`: print the config as JSON with secrets redacted (no write).
+	if (field === "export") {
+		return { text: formatWebAccessExport(), wrote: false };
+	}
+
+	// `doctor`: run config-consistency diagnostics (no write).
+	if (field === "doctor") {
+		return { text: formatDoctor(), wrote: false };
 	}
 
 	if (!SET_FIELDS.includes(field as SetField)) {
@@ -260,9 +489,6 @@ export function handleWebAccessCommand(args: string): WebAccessResult {
 	return { text: formatSetConfirmation(field, result.value), wrote: true };
 }
 
-/** Concrete credential providers accepted by `/webaccess set-key`. */
-const KEY_PROVIDERS = getAllCredentialSources().map((s) => s.provider);
-
 /**
  * Execute `/webaccess set-key <provider> <key>`. Writes the key to the config
  * file (creating it if absent). The key is never echoed back — the
@@ -291,6 +517,44 @@ function handleSetKey(rawValue: string): WebAccessResult {
 	const fingerprint = keyResult.value.slice(-4);
 	return {
 		text: `**Set** \`${provider}\` API key (saved to config; ends in …${fingerprint}). Use \`/webaccess\` to verify.`,
+		wrote: true,
+	};
+}
+
+/**
+ * Execute `/webaccess clear-key <provider>`. Removes the provider's API key
+ * from the config file. Provenance-aware: a key set via env var can't be
+ * cleared here (the process env is not ours to mutate), so the user is told
+ * to unset it instead. A missing key is a no-op with a friendly note.
+ */
+function handleClearKey(rawValue: string): WebAccessResult {
+	const provider = rawValue.trim().toLowerCase();
+	if (!provider) {
+		return { text: `**Validation failed:** provider is required. Usage: \`/webaccess clear-key <provider>\`. Valid providers: ${KEY_PROVIDERS.join(", ")}.`, wrote: false };
+	}
+	const source = getCredentialSource(provider);
+	if (!source) {
+		return { text: `**Validation failed:** unknown provider \`${provider}\`. Valid: ${KEY_PROVIDERS.join(", ")}.`, wrote: false };
+	}
+
+	// Provenance decides what "clear" means: env vars are immutable from here,
+	// config keys can be deleted, and a missing key is nothing to do.
+	const status = getProviderCredentialStatus().find((s) => s.provider === provider);
+	if (status?.provenance === "env") {
+		return {
+			text: `Can't clear \`${provider}\`: the key is set via the \`${source.env}\` env var, which \`/webaccess\` can't modify. Unset the variable in your shell/session instead.`,
+			wrote: false,
+		};
+	}
+	if (status?.provenance === "missing") {
+		return { text: `Nothing to clear: no \`${provider}\` API key is set (config or env).`, wrote: false };
+	}
+
+	// provenance === "config": delete by setting undefined — JSON.stringify
+	// drops undefined-valued keys, so the entry is removed from the file.
+	saveWebSearchConfig({ [source.configKey]: undefined } as Partial<RawWebSearchConfig>);
+	return {
+		text: `**Cleared** \`${provider}\` API key from the config file. Use \`/webaccess\` to verify.`,
 		wrote: true,
 	};
 }

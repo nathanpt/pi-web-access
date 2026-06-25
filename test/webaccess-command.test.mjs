@@ -41,6 +41,8 @@ const {
 	validateApiKey,
 	handleWebAccessCommand,
 	formatWebAccessSummary,
+	formatWebAccessHelp,
+	parseTestKeyArgs,
 	SET_FIELDS,
 } = await import("../webaccess-command.ts");
 const { clearWebSearchConfigCache } = await import("../config.ts");
@@ -339,4 +341,324 @@ test("summary hides the hints section once a key is set", () => {
 	} finally {
 		cleanup(home);
 	}
+});
+
+// ---- help page ----
+
+test("help/-h/--help render the reference page (case-insensitive), no write", () => {
+	const home = isolate();
+	try {
+		for (const arg of ["help", "-h", "--help", "HELP", "  -h "]) {
+			const { text, wrote } = handleWebAccessCommand(arg);
+			assert.equal(wrote, false, `${arg}: should not write`);
+			assert.match(text, /\*\*\/webaccess\*\* — inspect or update/);
+			// every field is documented
+			assert.match(text, /provider <auto\|priority\|exa\|perplexity\|gemini\|parallel>/);
+			assert.match(text, /workflow <none\|summary-review\|auto-summary>/);
+			assert.match(text, /set-key <exa\|perplexity\|parallel\|gemini> <key>/);
+			assert.match(text, /curator-timeout <1-600>/);
+			assert.match(text, /allow-browser-cookies <on\|off>/);
+		}
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("help is exported and standalone-usable", () => {
+	// formatWebAccessHelp is pure — no config read, safe without isolation
+	const text = formatWebAccessHelp();
+	assert.match(text, /Precedence: `env > config > defaults`/);
+	assert.match(text, /Secrets are never displayed/);
+});
+
+test("no-args still shows summary, not help", () => {
+	const home = isolate();
+	try {
+		const { text } = handleWebAccessCommand("");
+		assert.match(text, /Config file/);
+		assert.equal(/inspect or update/.test(text), false, "no-args returned help instead of summary");
+	} finally {
+		cleanup(home);
+	}
+});
+
+// ---- clear-key command ----
+
+test("clear-key removes the key from config + invalidates cache", () => {
+	const home = isolate();
+	try {
+		handleWebAccessCommand("set-key parallel sk-par-abcdef1234");
+		assert.equal(readConfig(home).parallelApiKey, "sk-par-abcdef1234");
+		const { text, wrote } = handleWebAccessCommand("clear-key parallel");
+		assert.equal(wrote, true);
+		assert.match(text, /Cleared.*parallel.*config file/);
+		// fully removed — not left as null
+		const cfg = readConfig(home);
+		assert.equal(cfg.parallelApiKey, undefined);
+		assert.equal("parallelApiKey" in cfg, false, "key left as null/undefined in file");
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("clear-key preserves other providers' keys", () => {
+	const home = isolate();
+	try {
+		handleWebAccessCommand("set-key parallel sk-par-1234");
+		handleWebAccessCommand("set-key gemini gem-real-9999");
+		handleWebAccessCommand("clear-key parallel");
+		const cfg = readConfig(home);
+		assert.equal(cfg.parallelApiKey, undefined);
+		assert.equal(cfg.geminiApiKey, "gem-real-9999");
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("clear-key on a missing key is a friendly no-op", () => {
+	const home = isolate();
+	try {
+		const { wrote, text } = handleWebAccessCommand("clear-key parallel");
+		assert.equal(wrote, false);
+		assert.match(text, /Nothing to clear.*parallel/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("clear-key rejects unknown provider + lists valid ones", () => {
+	const home = isolate();
+	try {
+		const { wrote, text } = handleWebAccessCommand("clear-key bogus");
+		assert.equal(wrote, false);
+		assert.match(text, /unknown provider.*bogus/);
+		assert.match(text, /exa, perplexity, parallel, gemini/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("clear-key cannot unset an env-var-sourced key", () => {
+	const home = isolate();
+	try {
+		process.env.PARALLEL_API_KEY = "sk-env-source-1234";
+		try {
+			const { wrote, text } = handleWebAccessCommand("clear-key parallel");
+			assert.equal(wrote, false);
+			// no mutation attempted
+			assert.match(text, /Can't clear.*parallel.*PARALLEL_API_KEY.*Unset/);
+		} finally {
+			delete process.env.PARALLEL_API_KEY;
+		}
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("help page documents clear-key", () => {
+	// pure, no isolation needed
+	const text = formatWebAccessHelp();
+	assert.match(text, /clear-key <exa\|perplexity\|parallel\|gemini>/);
+});
+
+// ---- export ----
+
+test("export redacts every *ApiKey field to provenance, never leaks the value", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		writeFileSync(configPath(home), JSON.stringify({
+			exaApiKey: "SECRET-EXA-aaaa",
+			parallelApiKey: "SECRET-PAR-bbbb",
+			geminiApiKey: "SECRET-GEM-cccc",
+			cloudflareApiKey: "SECRET-CF-dddd",
+			provider: "parallel",
+			workflow: "none",
+		}));
+		const { text, wrote } = handleWebAccessCommand("export");
+		assert.equal(wrote, false);
+		assert.match(text, /```json/);
+		// non-secret fields shown verbatim
+		assert.match(text, /"provider": "parallel"/);
+		assert.match(text, /"workflow": "none"/);
+		// every secret is masked — never the raw value
+		assert.equal(text.includes("SECRET"), false, "secret value leaked into export");
+		assert.match(text, /"exaApiKey": "<redacted: config>"/);
+		assert.match(text, /"parallelApiKey": "<redacted: config>"/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("export shows env provenance for env-sourced keys", () => {
+	const home = isolate();
+	try {
+		process.env.PARALLEL_API_KEY = "sk-env-secret-zzz";
+		try {
+			const { text } = handleWebAccessCommand("export");
+			// env-sourced key is redacted with 'env' provenance (note: it's not
+			// in the file at all, so it won't appear in the dump — but a
+			// config-sourced one would). Verify no leak regardless.
+			assert.equal(text.includes("sk-env-secret-zzz"), false);
+		} finally {
+			delete process.env.PARALLEL_API_KEY;
+		}
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("export on empty config yields a clean empty object", () => {
+	const home = isolate();
+	try {
+		const { text } = handleWebAccessCommand("export");
+		assert.match(text, /```json\n{}\n```/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+// ---- parseTestKeyArgs ----
+
+test("parseTestKeyArgs: provider required, candidate key optional, rejects placeholders/meta", () => {
+	assert.equal(parseTestKeyArgs("").ok, false);
+	assert.equal(parseTestKeyArgs("auto").ok, false, "auto is not a credential provider");
+	assert.equal(parseTestKeyArgs("priority").ok, false);
+	assert.equal(parseTestKeyArgs("bogus").ok, false);
+	// valid: saved-key test
+	assert.deepEqual(parseTestKeyArgs("parallel").value, { provider: "parallel" });
+	// valid: candidate-key test
+	assert.deepEqual(parseTestKeyArgs("gemini gem-key-1234").value, { provider: "gemini", candidateKey: "gem-key-1234" });
+	// placeholder candidate rejected
+	assert.equal(parseTestKeyArgs("parallel your-key").ok, false);
+	// whitespace-tolerant
+	assert.deepEqual(parseTestKeyArgs("  EXA   ").value, { provider: "exa" });
+});
+
+test("help page documents export + test-key", () => {
+	const text = formatWebAccessHelp();
+	assert.match(text, /\/webaccess export/);
+	assert.match(text, /test-key <exa\|perplexity\|parallel\|gemini> \[key\]/);
+});
+
+// ---- doctor ----
+
+test("doctor: clean bill of health on empty/default config", () => {
+	const home = isolate();
+	try {
+		const { text, wrote } = handleWebAccessCommand("doctor");
+		assert.equal(wrote, false);
+		assert.match(text, /no config issues found/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("doctor: clean when everything is consistent", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		writeFileSync(configPath(home), JSON.stringify({
+			provider: "auto",
+			parallelApiKey: "sk-real-1234",
+			workflow: "summary-review",
+			allowCurator: true,
+		}));
+		const { text } = handleWebAccessCommand("doctor");
+		assert.match(text, /no config issues found/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("doctor flags provider=priority with empty/unset providerPriority", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		for (const pp of [{ provider: "priority", providerPriority: [] }, { provider: "priority" }]) {
+			writeFileSync(configPath(home), JSON.stringify(pp));
+			clearWebSearchConfigCache();
+			const { text } = handleWebAccessCommand("doctor");
+			assert.match(text, /provider=priority.*providerPriority.*unset\/empty/);
+			assert.match(text, /Fix: \/webaccess provider-priority/);
+		}
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("doctor flags a concrete default provider with no key", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		writeFileSync(configPath(home), JSON.stringify({ provider: "parallel" }));
+		const { text } = handleWebAccessCommand("doctor");
+		assert.match(text, /provider: parallel.*no API key.*skipped\/fail/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("doctor flags unavailable entries in providerPriority (skips available exa)", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		// exa is always available (MCP fallback) → must NOT be flagged;
+		// perplexity + gemini have no key → must be flagged.
+		writeFileSync(configPath(home), JSON.stringify({
+			provider: "priority",
+			providerPriority: ["exa", "perplexity", "gemini"],
+		}));
+		const { text } = handleWebAccessCommand("doctor");
+		assert.equal(/provider: exa/.test(text), false, "exa flagged despite MCP fallback");
+		assert.match(text, /provider: perplexity.*no API key/);
+		assert.match(text, /provider: gemini.*no API key/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("doctor flags placeholder keys saved in the config file", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		writeFileSync(configPath(home), JSON.stringify({
+			exaApiKey: "your-key",
+			parallelApiKey: "<insert-here>",
+		}));
+		const { text } = handleWebAccessCommand("doctor");
+		assert.match(text, /key: exa.*placeholder.*your-key/);
+		assert.match(text, /key: parallel.*placeholder/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("doctor flags workflow=summary-review with allowCurator false", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		writeFileSync(configPath(home), JSON.stringify({ workflow: "summary-review", allowCurator: false }));
+		const { text } = handleWebAccessCommand("doctor");
+		assert.match(text, /workflow vs curator.*resolves to .none./);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("doctor does not flag workflow=auto-summary with curator disabled (headless is valid)", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		writeFileSync(configPath(home), JSON.stringify({ workflow: "auto-summary", allowCurator: false }));
+		const { text } = handleWebAccessCommand("doctor");
+		assert.match(text, /no config issues found/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("help page documents doctor", () => {
+	const text = formatWebAccessHelp();
+	assert.match(text, /\/webaccess doctor/);
 });
