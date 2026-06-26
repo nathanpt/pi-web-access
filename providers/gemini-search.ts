@@ -6,8 +6,9 @@ import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
 import { isParallelAvailable, searchWithParallel } from "./parallel.js";
+import { isSearXNGAvailable, searchWithSearXNG } from "./searxng.js";
 
-export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel";
+export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority">;
 
 /**
@@ -21,13 +22,14 @@ export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority"
  */
 const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "perplexity", "gemini", "parallel"];
 
-const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel"]);
+const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng"]);
 
 const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
 	exa: "Exa",
 	perplexity: "Perplexity",
 	gemini: "Gemini",
 	parallel: "Parallel",
+	searxng: "SearXNG",
 };
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -128,7 +130,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel"
+	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng"
 		? normalized
 		: "auto";
 }
@@ -220,6 +222,19 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		} catch (err) {
 			if (isAbortError(err)) throw err;
 			attempts.push({ provider: "parallel", status: "error", detail: errorMessage(err) });
+			attachSearchTrace(err, { ...trace, selected: null });
+			throw err;
+		}
+	}
+
+	if (provider === "searxng") {
+		try {
+			const result = await searchWithSearXNG(query, options);
+			attempts.push({ provider: "searxng", status: "success" });
+			return { ...result, provider: "searxng", trace: { ...trace, selected: "searxng" } };
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			attempts.push({ provider: "searxng", status: "error", detail: errorMessage(err) });
 			attachSearchTrace(err, { ...trace, selected: null });
 			throw err;
 		}
@@ -324,6 +339,8 @@ async function isCandidateAvailable(p: ResolvedSearchProvider): Promise<boolean>
 			return isGeminiApiAvailable() || !!(await isGeminiWebAvailable());
 		case "parallel":
 			return isParallelAvailable();
+		case "searxng":
+			return isSearXNGAvailable();
 	}
 }
 
@@ -345,6 +362,8 @@ async function runFallbackProvider(
 			return await searchWithGemini(query, options, false);
 		case "parallel":
 			return await searchWithParallel(query, options);
+		case "searxng":
+			return await searchWithSearXNG(query, options);
 	}
 }
 

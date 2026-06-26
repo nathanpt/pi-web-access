@@ -5,6 +5,8 @@ export interface WebSearchConfig {
 	allowCurator?: unknown;
 	curatorTimeoutSeconds?: unknown;
 	summaryModel?: string;
+	/** SearXNG self-hosted metasearch base URL (optional `web_search` provider). */
+	searxngBaseUrl?: string;
 	webSearch?: {
 		enabled?: boolean;
 	};

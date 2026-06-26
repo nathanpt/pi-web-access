@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **SearXNG `web_search` provider** (ports upstream #107, @marnunez). SearXNG is a self-hosted metasearch — the only provider that needs no third-party API key and no cloud account, suiting privacy / air-gapped / homelab setups with zero per-query billing. Configure with `searxngBaseUrl` (or `SEARXNG_BASE_URL`) pointing at a SearXNG JSON API, then select it with `provider: "searxng"` or list it in `providerPriority`. **Opt-in by design** — not part of the built-in `auto` order, so a configured instance never silently becomes a first-choice fallback. Supports `numResults`, `recencyFilter`, and domain include/exclude filters (`site:`/`-site:`). Config access routed through the centralized `config.ts` (no local config clone).
+
 ## [0.12.0] - 2026-06-26
 
 ### Security
