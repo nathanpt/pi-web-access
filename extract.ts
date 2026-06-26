@@ -9,6 +9,7 @@ import { extractGitHub } from "./extractors/github-extract.js";
 import { isYouTubeURL, isYouTubeEnabled, extractYouTube, extractYouTubeFrame, extractYouTubeFrames, getYouTubeStreamInfo } from "./extractors/youtube-extract.js";
 import { extractWithUrlContext, extractWithGeminiWeb } from "./providers/gemini-url-context.js";
 import { extractWithParallel } from "./providers/parallel.js";
+import { extractWithOlostep } from "./providers/olostep.js";
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./extractors/video-extract.js";
 import { fetchRemoteUrl, validateRemoteUrl, type Lookup } from "./ssrf-protection.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -463,6 +464,15 @@ export async function extractContent(
 
 	const jinaResult = await extractWithJinaReader(url, signal, options?.lookup);
 	if (jinaResult) return jinaResult;
+	if (signal?.aborted) return abortedResult(url);
+
+	// Olostep scrape: paid server-side render → markdown. Slots after the free
+	// Jina Reader and before Parallel (another paid renderer), adding another
+	// blocked-page / JS-rendered / anti-bot recovery option. Returns null when
+	// unavailable (no key) or on failure — the chain convention; errors are
+	// logged to the activity widget inside the provider.
+	const olostepResult = await extractWithOlostep(url, signal);
+	if (olostepResult) return olostepResult;
 	if (signal?.aborted) return abortedResult(url);
 
 	// Parallel Extract: server-side render + extract, handles JS-heavy pages and PDFs.

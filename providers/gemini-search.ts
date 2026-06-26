@@ -7,8 +7,9 @@ import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type Se
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
 import { isParallelAvailable, searchWithParallel } from "./parallel.js";
 import { isSearXNGAvailable, searchWithSearXNG } from "./searxng.js";
+import { isOlostepAvailable, searchWithOlostep } from "./olostep.js";
 
-export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng";
+export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng" | "olostep";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority">;
 
 /**
@@ -22,7 +23,7 @@ export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority"
  */
 const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "perplexity", "gemini", "parallel"];
 
-const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng"]);
+const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "olostep"]);
 
 const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
 	exa: "Exa",
@@ -30,6 +31,7 @@ const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
 	gemini: "Gemini",
 	parallel: "Parallel",
 	searxng: "SearXNG",
+	olostep: "Olostep",
 };
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -130,7 +132,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng"
+	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep"
 		? normalized
 		: "auto";
 }
@@ -240,6 +242,22 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
+	if (provider === "olostep") {
+		const result = await searchWithOlostep(query, options);
+		if (result) {
+			attempts.push({ provider: "olostep", status: "success" });
+			return { ...result, provider: "olostep", trace: { ...trace, selected: "olostep" } };
+		}
+		attempts.push({ provider: "olostep", status: "no-result", detail: "no API key configured" });
+		const err = new Error(
+			"Olostep search requires an API key. Either:\n" +
+			`  1. Set olostepApiKey in ${CONFIG_PATH}\n` +
+			"  2. Set OLOSTEP_API_KEY environment variable"
+		);
+		attachSearchTrace(err, { ...trace, selected: null });
+		throw err;
+	}
+
 	if (provider === "exa") {
 		const exaApiKeyConfigured = hasExaApiKey();
 		try {
@@ -341,6 +359,8 @@ async function isCandidateAvailable(p: ResolvedSearchProvider): Promise<boolean>
 			return isParallelAvailable();
 		case "searxng":
 			return isSearXNGAvailable();
+		case "olostep":
+			return isOlostepAvailable();
 	}
 }
 
@@ -364,6 +384,8 @@ async function runFallbackProvider(
 			return await searchWithParallel(query, options);
 		case "searxng":
 			return await searchWithSearXNG(query, options);
+		case "olostep":
+			return await searchWithOlostep(query, options);
 	}
 }
 

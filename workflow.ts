@@ -7,6 +7,8 @@ export interface WebSearchConfig {
 	summaryModel?: string;
 	/** SearXNG self-hosted metasearch base URL (optional `web_search` provider). */
 	searxngBaseUrl?: string;
+	/** Olostep API key (optional `web_search` provider + `fetch_content` scrape fallback). */
+	olostepApiKey?: string;
 	webSearch?: {
 		enabled?: boolean;
 	};
