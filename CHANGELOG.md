@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **SSRF guard hardened: redirect-aware + DNS-resolving.** Ports upstream #102 (@TianZuo555) onto our SSRF protection (previously the lighter inline `validateUrl` from fork PR #2 / upstream #81). Two exploitable gaps closed: (a) **redirect SSRF** — `fetch()` followed redirects automatically with no re-validation, so `attacker.com → 169.254.169.254` (cloud metadata) bypassed the guard; the new `fetchRemoteUrl` uses `redirect: "manual"` and re-validates each `Location`. (b) **DNS resolution** — only *literal* private IPs were regex-blocked, so a domain resolving to `10.0.0.1` passed; the new `validateRemoteUrl` does `dns.lookup` and checks every resolved address. Also adds full IPv6 coverage (ULA `fc00::/7`, link-local `fe80::/10`, IPv4-mapped `::ffff:...`) and hardened CIDR parsing (a silent `/0` bug where `Number("")` would exempt every address is now rejected). New dedicated `ssrf-protection.ts`; the self-duplicated `test/ssrf-protection.test.mjs` now imports the real module (true regression guard).
+- **`ssrf.allowRanges` config** exempts CIDR ranges from the SSRF guard for hosts running a TUN/fake-IP proxy (Surge, Clash, Mihomo, Stash, ...) that resolves public domains into a synthetic reserved range (e.g. `198.18.0.0/15`). Off by default; malformed/all-address (`0.0.0.0/0`) entries fail loudly instead of weakening the guard. Thanks @TianZuo555 for #101/#102.
+
 ### Added
 - **`/webaccess` command surface expanded.** The command is now a complete config-management surface, all documented under `/webaccess help` (also `-h` / `--help`):
   - **`set-key <provider> <key>`** writes a provider API key to config (file created if absent); validated, never echoed — the confirmation shows only a last-4 fingerprint. Placeholder values (`your-key`, `<...>`) are rejected so they can't silently 401 mid-fallback.
