@@ -4,13 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`/webaccess` command surface expanded.** The command is now a complete config-management surface, all documented under `/webaccess help` (also `-h` / `--help`):
+  - **`set-key <provider> <key>`** writes a provider API key to config (file created if absent); validated, never echoed — the confirmation shows only a last-4 fingerprint. Placeholder values (`your-key`, `<...>`) are rejected so they can't silently 401 mid-fallback.
+  - **`clear-key <provider>`** removes a key from config. Provenance-aware: a key set via env var can't be cleared here (the process env isn't mutated), so it reports which variable to unset instead.
+  - **`test-key <provider> [key]`** dry-runs a real provider search to confirm a key works. With a candidate `[key]`, tests ephemerally via the process env (nothing written, restored afterwards); without, tests the configured key.
+  - **`doctor`** runs config-consistency diagnostics surfacing latent misconfigs the status table can't express: `provider: priority` with empty/unset `providerPriority`; a selected/prioritized provider with no key; a saved key that looks like a placeholder; `workflow: summary-review` paired with `allowCurator: false`. Each finding includes a one-line `Fix:` command.
+  - **`export`** prints the config as JSON with every `*ApiKey` masked to its provenance (`<redacted: env>` / `<redacted: config>`); non-secret fields verbatim. Safe to share, diff, or back up.
+  - **`allow-curator <on|off>`** toggles `allowCurator` (the hard headless lever). Warns when set to `off` while `workflow` is `summary-review` (which would become inert) and suggests `auto-summary`.
+  - **`help`** (or `-h` / `--help`) renders a full reference page listing every field + command with accepted values.
+  - **Setting API keys hints.** The `/webaccess` summary now prints a "Setting API keys" section for every missing provider, showing both ways to supply the key (`set-key` command + env var); the section hides once a key is set.
+
 ### Changed
+- **`/websearch` refuses on a headless config.** Running `/websearch` (the explicit curator-opener) when `allowCurator` is off or `workflow` is `auto-summary`/`none` now refuses with an actionable message pointing at the `web_search` tool (which honors the workflow and runs inline) instead of spinning up a server that can't be opened.
+
+### Fixed
+- **`/webaccess` renders silently.** It no longer triggers a model follow-up turn after printing its output — the command is terminal/CLI-only (was waking the model to append commentary).
+- **Curator stays alive when no GUI browser is available.** On headless/SSH Linux, `xdg-open` previously failed and both curator paths tore down the (still-valid) HTTP server, stranding the user. The server now stays up, the noisy 6-line `xdg-open` stderr collapses to one readable line, and the activity widget shows the URL plus a "no GUI browser detected — open it manually (SSH tunnel) or use auto-summary" warning. The headless hint is tailored to the current workflow (no longer suggests the command the user already set).
+
+### Changed (provider routing)
 - **`parallel` is now part of the default `auto` provider order.** The built-in order is now Exa → Perplexity → Gemini → Parallel. Parallel is appended last, so a configured Parallel API key acts as a safety-net fallback when the other providers are unavailable or fail; it does not disrupt existing routing for users who haven't configured it. You can still select it explicitly with `provider: "parallel"`. Previously `parallel` was opt-in only (excluded from `auto`).
 
-### Added
+### Added (provider routing)
 - **Provider Trace v1 for `web_search`.** Every `web_search` result now carries a read-only `trace` audit in its `details`: the routing mode (`auto`/`priority`/explicit provider), the resolved fallback order, and an ordered per-provider attempt list (status `success` / `error` / `skipped` / `no-result`, with error or skip detail). Lets you see *why* a provider was chosen. On failure, the trace is attached to the thrown error (recoverable via `getSearchTrace(err)`). No new controls — purely observability.
 - **Placeholder-key detection.** Template/placeholder API-key values (e.g. `"your-key"`, `"<your-api-key>"`, `"placeholder"`, `"xxx"`) are now treated as missing for every provider. This prevents a leftover doc-example value from being selected and then 401-ing mid-fallback — the search gracefully falls through to the next provider instead. Required for `parallel` joining the `auto` order (otherwise a placeholder `PARALLEL_API_KEY` would 401).
-- **`/webaccess` command.** Inspect the effective config (config path, routing, provider-credential provenance table, browser-cookie status) and update common settings (`provider`, `workflow`, `provider-priority`, `allow-browser-cookies`, `search-model`, `curator-timeout`) from the command line with pre-save validation. Secrets are never displayed — only provenance (`env` / `config` / `missing`). Config load/save is now centralized in a new `config.ts` (the per-provider `loadConfig()` clones are removed).
+- **`/webaccess` command (base).** Inspect the effective config (config path, routing, provider-credential provenance table, browser-cookie status) and update common settings (`provider`, `workflow`, `provider-priority`, `allow-browser-cookies`, `search-model`, `curator-timeout`) from the command line with pre-save validation. Secrets are never displayed — only provenance (`env` / `config` / `missing`). Config load/save is now centralized in a new `config.ts` (the per-provider `loadConfig()` clones are removed).
 
 ## [0.11.0] - 2026-06-24
 
