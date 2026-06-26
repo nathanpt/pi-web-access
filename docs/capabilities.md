@@ -46,7 +46,7 @@ When Readability fails or returns only a cookie notice, the extension retries vi
 
 ```
 web_search(query)
-  → Exa (direct API with key, MCP without) → Perplexity → Gemini API → Gemini Web (if browser cookies enabled)
+  → Exa (direct API with key, MCP without) → Perplexity → Gemini API → Gemini Web (if browser cookies enabled) → Parallel (last-resort fallback if keyed)
 
 fetch_content(url)
   → Video file?  Gemini API (Files API) → Gemini Web (if browser cookies enabled)
