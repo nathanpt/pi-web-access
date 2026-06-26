@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-26
+
 ### Security
 - **SSRF guard hardened: redirect-aware + DNS-resolving.** Ports upstream #102 (@TianZuo555) onto our SSRF protection (previously the lighter inline `validateUrl` from fork PR #2 / upstream #81). Two exploitable gaps closed: (a) **redirect SSRF** — `fetch()` followed redirects automatically with no re-validation, so `attacker.com → 169.254.169.254` (cloud metadata) bypassed the guard; the new `fetchRemoteUrl` uses `redirect: "manual"` and re-validates each `Location`. (b) **DNS resolution** — only *literal* private IPs were regex-blocked, so a domain resolving to `10.0.0.1` passed; the new `validateRemoteUrl` does `dns.lookup` and checks every resolved address. Also adds full IPv6 coverage (ULA `fc00::/7`, link-local `fe80::/10`, IPv4-mapped `::ffff:...`) and hardened CIDR parsing (a silent `/0` bug where `Number("")` would exempt every address is now rejected). New dedicated `ssrf-protection.ts`; the self-duplicated `test/ssrf-protection.test.mjs` now imports the real module (true regression guard).
 - **`ssrf.allowRanges` config** exempts CIDR ranges from the SSRF guard for hosts running a TUN/fake-IP proxy (Surge, Clash, Mihomo, Stash, ...) that resolves public domains into a synthetic reserved range (e.g. `198.18.0.0/15`). Off by default; malformed/all-address (`0.0.0.0/0`) entries fail loudly instead of weakening the guard. Thanks @TianZuo555 for #101/#102.
@@ -33,6 +35,9 @@ All notable changes to this project will be documented in this file.
 - **Provider Trace v1 for `web_search`.** Every `web_search` result now carries a read-only `trace` audit in its `details`: the routing mode (`auto`/`priority`/explicit provider), the resolved fallback order, and an ordered per-provider attempt list (status `success` / `error` / `skipped` / `no-result`, with error or skip detail). Lets you see *why* a provider was chosen. On failure, the trace is attached to the thrown error (recoverable via `getSearchTrace(err)`). No new controls — purely observability.
 - **Placeholder-key detection.** Template/placeholder API-key values (e.g. `"your-key"`, `"<your-api-key>"`, `"placeholder"`, `"xxx"`) are now treated as missing for every provider. This prevents a leftover doc-example value from being selected and then 401-ing mid-fallback — the search gracefully falls through to the next provider instead. Required for `parallel` joining the `auto` order (otherwise a placeholder `PARALLEL_API_KEY` would 401).
 - **`/webaccess` command (base).** Inspect the effective config (config path, routing, provider-credential provenance table, browser-cookie status) and update common settings (`provider`, `workflow`, `provider-priority`, `allow-browser-cookies`, `search-model`, `curator-timeout`) from the command line with pre-save validation. Secrets are never displayed — only provenance (`env` / `config` / `missing`). Config load/save is now centralized in a new `config.ts` (the per-provider `loadConfig()` clones are removed).
+
+### Documentation
+- **README → `docs/` reference split.** The README is now a landing page (hero, Why, Features, Install, Quick Start) with a Documentation index; the full reference (tool params, capabilities, commands, configuration, skills) lives in tracked, version-pinned `docs/*.md`. AGENTS.md "where to start" now points into `docs/`.
 
 ## [0.11.0] - 2026-06-24
 
