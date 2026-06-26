@@ -33,6 +33,7 @@ export interface RawWebSearchConfig {
 	geminiApiKey?: unknown;
 	geminiBaseUrl?: unknown;
 	cloudflareApiKey?: unknown;
+	searxngBaseUrl?: unknown;
 	// Browser cookies
 	chromeProfile?: unknown;
 	allowBrowserCookies?: unknown;
