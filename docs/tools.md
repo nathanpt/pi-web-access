@@ -4,7 +4,7 @@ Pi Web Access registers four tools with the Pi agent.
 
 ## web_search
 
-Search the web via Exa, Perplexity AI, Gemini, Parallel, or a self-hosted SearXNG instance. Returns a synthesized answer with source citations. The tool result's `details` object includes a per-query `trace` (read-only routing audit: which providers were considered, skipped, errored, and which produced the result) so you can see *why* a provider was chosen.
+Search the web via Exa, Perplexity AI, Gemini, Parallel, a self-hosted SearXNG instance, or Olostep. Returns a synthesized answer with source citations. The tool result's `details` object includes a per-query `trace` (read-only routing audit: which providers were considered, skipped, errored, and which produced the result) so you can see *why* a provider was chosen.
 
 ```typescript
 web_search({ query: "rust async programming" })
@@ -25,7 +25,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | `numResults` | Results per query (default: 5, max: 20) |
 | `recencyFilter` | `day`, `week`, `month`, or `year` |
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
-| `provider` | `auto` (default), `priority`, `exa`, `perplexity`, `gemini`, `parallel`, or `searxng`. `auto` order is Exa → Perplexity → Gemini → Parallel (last resort). `searxng` is opt-in (not in the `auto` order). Use `priority` to honor the `providerPriority` order |
+| `provider` | `auto` (default), `priority`, `exa`, `perplexity`, `gemini`, `parallel`, `searxng`, or `olostep`. `auto` order is Exa → Perplexity → Gemini → Parallel (last resort). `searxng` and `olostep` are opt-in (not in the `auto` order). Use `priority` to honor the `providerPriority` order |
 | `includeContent` | Fetch full page content from sources in background |
 | `workflow` | `none` (skip curator), `summary-review` (auto-generate summary draft after search completion, default unless `allowCurator` is false), or `auto-summary` (generate a summary without opening the curator — works headless) |
 
