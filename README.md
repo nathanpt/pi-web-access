@@ -19,7 +19,7 @@
 > with `pi install git:github.com/nathanpt/pi-web-access`. See
 > [Maintenance & Fork Status](#maintenance--fork-status) below.
 
-https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
+<!-- https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f -->
 
 ## Why Pi Web Access
 
