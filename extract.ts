@@ -25,34 +25,58 @@ const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
 /**
  * Read `ssrf.allowRanges` (CIDR strings) from web-search.json. Returns [] when
  * the file is missing, unreadable, or the key is unset so SSRF protection stays
- * fully on by default. Throws when `ssrf.allowRanges` is present but not an array
- * (or an entry is not a string) so a mistyped value fails loudly instead of being
- * silently ignored. Exempts synthetic ranges used by TUN/fake-IP proxies
- * (e.g. 198.18.0.0/15 for Surge/Clash/Mihomo).
+ * fully on by default. Throws when an `ssrf` value is mistyped so misconfiguration
+ * fails loudly instead of being silently ignored. Exempts synthetic ranges used by
+ * TUN/fake-IP proxies (e.g. 198.18.0.0/15 for Surge/Clash/Mihomo).
+ *
+ * Also reads `ssrf.trustEnvProxy` (boolean, default false): when enabled, the SSRF
+ * guard skips local DNS preflight for hostnames routed through an explicit
+ * HTTP_PROXY/HTTPS_PROXY (respecting NO_PROXY), while still blocking localhost,
+ * *.localhost, and literal internal IPs. For sandboxed setups (OpenShell) where the
+ * proxy *is* the egress policy boundary and local DNS preflight fails before
+ * reaching it. Ports upstream PR #109 (@DBPhoenix).
  */
-export function loadSsrfAllowRanges(): string[] {
-	let value: unknown;
+export interface SsrfConfig {
+	allowRanges: string[];
+	trustEnvProxy: boolean;
+}
+
+export function loadSsrfConfig(): SsrfConfig {
+	let ssrf: unknown;
 	try {
-		if (!existsSync(WEB_SEARCH_CONFIG_PATH)) return [];
+		if (!existsSync(WEB_SEARCH_CONFIG_PATH)) return { allowRanges: [], trustEnvProxy: false };
 		const raw = readFileSync(WEB_SEARCH_CONFIG_PATH, "utf-8");
-		value = (JSON.parse(raw) as { ssrf?: { allowRanges?: unknown } })?.ssrf?.allowRanges;
+		ssrf = (JSON.parse(raw) as { ssrf?: unknown })?.ssrf;
 	} catch {
 		// Missing/unreadable file or invalid JSON: fail safe with SSRF fully on.
-		return [];
+		return { allowRanges: [], trustEnvProxy: false };
 	}
-	if (value === undefined || value === null) return [];
-	if (!Array.isArray(value)) {
+	if (ssrf === undefined || ssrf === null) return { allowRanges: [], trustEnvProxy: false };
+	if (typeof ssrf !== "object" || Array.isArray(ssrf)) {
+		throw new Error(`ssrf in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
+	}
+	const allowRangesValue = (ssrf as { allowRanges?: unknown }).allowRanges;
+	const trustEnvProxyValue = (ssrf as { trustEnvProxy?: unknown }).trustEnvProxy;
+	if (allowRangesValue !== undefined && allowRangesValue !== null && !Array.isArray(allowRangesValue)) {
 		throw new Error(`ssrf.allowRanges in ${WEB_SEARCH_CONFIG_PATH} must be an array of CIDR strings`);
 	}
+	if (trustEnvProxyValue !== undefined && typeof trustEnvProxyValue !== "boolean") {
+		throw new Error(`ssrf.trustEnvProxy in ${WEB_SEARCH_CONFIG_PATH} must be a boolean`);
+	}
 	const ranges: string[] = [];
-	for (const [index, entry] of value.entries()) {
+	for (const [index, entry] of (allowRangesValue ?? []).entries()) {
 		if (typeof entry !== "string") {
 			throw new Error(`ssrf.allowRanges in ${WEB_SEARCH_CONFIG_PATH} must contain only CIDR strings; entry ${index + 1} is ${typeof entry}`);
 		}
 		const trimmed = entry.trim();
 		if (trimmed) ranges.push(trimmed);
 	}
-	return ranges;
+	return { allowRanges: ranges, trustEnvProxy: trustEnvProxyValue === true };
+}
+
+/** Backward-compatible wrapper. Prefer loadSsrfConfig() for new call sites. */
+export function loadSsrfAllowRanges(): string[] {
+	return loadSsrfConfig().allowRanges;
 }
 
 function errorMessage(err: unknown): string {
@@ -116,7 +140,8 @@ async function extractWithJinaReader(
 	signal?: AbortSignal,
 	lookup?: Lookup,
 ): Promise<ExtractedContent | null> {
-	await validateRemoteUrl(url, { allowRanges: loadSsrfAllowRanges(), lookup });
+	const ssrf = loadSsrfConfig();
+	await validateRemoteUrl(url, { allowRanges: ssrf.allowRanges, trustEnvProxy: ssrf.trustEnvProxy, lookup });
 	const jinaUrl = JINA_READER_BASE + url;
 
 	const activityId = activityMonitor.logStart({ type: "api", query: `jina: ${url}` });
@@ -260,7 +285,8 @@ export async function extractContent(
 	// Local file paths (video frames, etc.) skip this and are handled below.
 	if (url.startsWith("http://") || url.startsWith("https://")) {
 		try {
-			await validateRemoteUrl(url, { allowRanges: loadSsrfAllowRanges(), lookup: options?.lookup });
+			const ssrf = loadSsrfConfig();
+			await validateRemoteUrl(url, { allowRanges: ssrf.allowRanges, trustEnvProxy: ssrf.trustEnvProxy, lookup: options?.lookup });
 		} catch (err) {
 			return { url, title: "", content: "", error: errorMessage(err) };
 		}
@@ -543,6 +569,7 @@ async function extractViaHttp(
 	signal?.addEventListener("abort", onAbort);
 
 	try {
+		const ssrf = loadSsrfConfig();
 		const response = await fetchRemoteUrl(
 			url,
 			{
@@ -559,7 +586,7 @@ async function extractViaHttp(
 					"Upgrade-Insecure-Requests": "1",
 				},
 			},
-			{ allowRanges: loadSsrfAllowRanges(), lookup: options?.lookup },
+			{ allowRanges: ssrf.allowRanges, trustEnvProxy: ssrf.trustEnvProxy, lookup: options?.lookup },
 		);
 
 		if (!response.ok) {
