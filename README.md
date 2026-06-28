@@ -23,11 +23,11 @@
 
 ## Why Pi Web Access
 
-**Zero Config** — Works out of the box with Exa MCP (no API key needed). Add API keys for Exa, Perplexity, Gemini API, or Parallel for more control, or opt into browser-cookie access for Gemini Web.
+**Zero Config** — Works out of the box with Exa MCP (no API key needed). Add API keys for Exa, Perplexity, Gemini API, or Parallel for more control, or opt into browser-cookie access for Gemini Web. Five more opt-in providers (SearXNG, Olostep, Brave, Tavily, OpenAI) are selectable via `provider:` / `providerPriority`.
 
 **Video Understanding** — Point it at a YouTube video or local screen recording and ask questions about what's on screen. Full transcripts, visual descriptions, and frame extraction at exact timestamps.
 
-**Smart Fallbacks** — Every capability has a fallback chain, so something always works. Search tries Exa (direct API if keyed, MCP if not), then Perplexity, then Gemini API, then Gemini Web when browser cookies are enabled — or define your **own order** with `provider: "priority"`. YouTube tries Gemini Web → API → Perplexity. Blocked pages retry through Jina Reader and Gemini extraction.
+**Smart Fallbacks** — Every capability has a fallback chain, so something always works. Search tries Exa (direct API if keyed, MCP if not), then Perplexity, then Gemini API, then Parallel as a last-resort fallback — or define your **own order** with `provider: "priority"`. Five more opt-in providers (SearXNG, Olostep, Brave, Tavily, OpenAI) are reachable the same way. YouTube tries Gemini Web → API → Perplexity. Blocked pages retry through Jina Reader, Olostep scrape, Parallel, and Gemini extraction.
 
 **Headless-Friendly** — `workflow: "auto-summary"` generates a model summary inline without ever opening a browser, so it works in `-p` / CI / SSH sessions. Pair with `allowCurator: false` for a fully headless setup. Both are settable from the command: `/webaccess workflow auto-summary` and `/webaccess allow-curator off`.
 
@@ -39,7 +39,7 @@
 
 | Capability | What you get |
 | --- | --- |
-| 🔍 **Web search** | Exa (zero-config MCP) · Perplexity · Gemini (API + browser-cookie Web) · Parallel — with a fallback chain or your own `providerPriority` order |
+| 🔍 **Web search** | Exa (zero-config MCP) · Perplexity · Gemini (API + browser-cookie Web) · Parallel — plus opt-in SearXNG · Olostep · Brave · Tavily · OpenAI. Use the fallback chain or your own `providerPriority` order |
 | 📄 **Content fetch** | Readability + RSC + Jina Reader + Gemini extraction, GitHub clone, PDF text, SSRF-safe |
 | 🎥 **Video understanding** | YouTube transcripts & visual Q&A, local-video frame extraction at timestamps |
 | 🧠 **Headless summaries** | `auto-summary` workflow — model summaries without the browser curator |
@@ -72,16 +72,25 @@ Works immediately with no API keys — Exa MCP provides zero-config search. For 
 /webaccess set-key perplexity pplx-...
 /webaccess set-key gemini AIza...
 /webaccess set-key parallel parallel-key...
+/webaccess set-key brave BSAkey...
+/webaccess set-key tavily tvly-...
+/webaccess set-key olostep olostep-...
+/webaccess set-key openai sk-...
 ```
 
-Keys are validated and never echoed back (the confirmation shows only a last-4 fingerprint). You can also edit `~/.pi/web-search.json` directly, or set the env vars (`EXA_API_KEY`, `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, `PARALLEL_API_KEY`):
+Keys are validated and never echoed back (the confirmation shows only a last-4 fingerprint). SearXNG uses a base URL instead of a key (`/webaccess` shows its status; configure via `searxngBaseUrl` / `SEARXNG_BASE_URL`). You can also edit `~/.pi/web-search.json` directly, or set the env vars (`EXA_API_KEY`, `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, `PARALLEL_API_KEY`, `BRAVE_API_KEY`, `TAVILY_API_KEY`, `OLOSTEP_API_KEY`, `OPENAI_API_KEY`, `SEARXNG_BASE_URL`):
 
 ```json
 {
   "exaApiKey": "exa-...",
   "perplexityApiKey": "pplx-...",
   "geminiApiKey": "AIza...",
-  "parallelApiKey": "parallel-key..."
+  "parallelApiKey": "parallel-key...",
+  "braveApiKey": "BSAkey...",
+  "tavilyApiKey": "tvly-...",
+  "olostepApiKey": "olostep-...",
+  "openaiApiKey": "sk-...",
+  "searxngBaseUrl": "https://search.example.com"
 }
 ```
 
@@ -178,6 +187,8 @@ upstream commits or PRs, please cite the original author's work.
 | `extract.ts` | URL/file path routing, HTTP extraction, fallback orchestration |
 | `activity.ts` | Activity tracking for the observability widget |
 | `storage.ts` | Session-aware result storage (powers `get_search_content`) |
+| `render-search-error.ts` | Pure `buildSearchErrorPlan` powering the expandable Ctrl+O error/cancel diagnostics across all four tools |
+| `ssrf-protection.ts` | Redirect-aware + DNS-resolving SSRF guard + `ssrf.allowRanges` config |
 | `utils.ts` | Shared formatting and error helpers |
 | `workflow.ts` | Curator workflow resolution (`/curator` on/off/none/auto-summary) |
 | `chrome-cookies.ts` | macOS/Linux Chromium-based cookie extraction (Keychain/secret-tool + SQLite) |
@@ -186,7 +197,12 @@ upstream commits or PRs, please cite the original author's work.
 | `providers/exa.ts` | Exa.ai search provider — direct API and MCP proxy, budget tracking |
 | `providers/perplexity.ts` | Perplexity API client with rate limiting |
 | `providers/parallel.ts` | Parallel search provider — `api.parallel.ai` web search, included as the last fallback in `auto` mode |
-| `providers/gemini-search.ts` | Search routing across Exa, Perplexity, Gemini, Parallel — shared fallback loop (`DEFAULT_AUTO_ORDER = [exa, perplexity, gemini, parallel]`); Provider Trace (`SearchTrace`, `attachSearchTrace`/`getSearchTrace`) |
+| `providers/gemini-search.ts` | Search routing across all providers — shared fallback loop (`DEFAULT_AUTO_ORDER = [exa, perplexity, gemini, parallel]`; searxng/olostep/brave/tavily/openai opt-in); Provider Trace (`SearchTrace`, `attachSearchTrace`/`getSearchTrace`); `ALL_PROVIDERS` is the single source of truth for the provider list |
+| `providers/searxng.ts` | SearXNG self-hosted metasearch provider (no key; base URL) — opt-in |
+| `providers/olostep.ts` | Olostep answers provider **+** `fetch_content` scrape fallback — opt-in, key-gated |
+| `providers/brave.ts` | Brave Search API provider — opt-in, key-gated |
+| `providers/tavily.ts` | Tavily Search API provider (native answer + `inlineContent`) — opt-in, key-gated |
+| `providers/openai-search.ts` | OpenAI Responses API + built-in `web_search` tool provider — opt-in, key-gated (Codex-subscription auth deferred) |
 | `providers/gemini-api.ts` | Gemini REST API client (generateContent) |
 | `providers/gemini-web.ts` | Gemini Web client (cookie auth, StreamGenerate) |
 | `providers/gemini-web-config.ts` | Gemini Web profile and browser-cookie opt-in config |
