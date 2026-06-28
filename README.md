@@ -220,3 +220,15 @@ upstream commits or PRs, please cite the original author's work.
 | `skills/librarian/` | Bundled skill for library research |
 
 </details>
+
+## Differences from upstream
+
+This fork tracks upstream and merges its PRs incrementally (see [Maintenance & Fork Status](#maintenance--fork-status)), but a few divergences are **intentional and permanent** — they won't be reconciled by a future upstream merge:
+
+- **`code_search` is retained.** Upstream removed it (`7ae547d`), citing overlap with `web_search`. We keep it: `code_search` calls Exa's distinct `get_code_context_exa` code index with token-budgeting and query tuning that `web_search` lacks. Recorded as a permanent divergence in the `0.11.0` changelog.
+- **The Exa local usage cap is retained.** Upstream removed it (`2e1f454`); we keep our own budget logic (and `parallel.ts`'s), so local usage stays bounded.
+- **Our own `parallel.ts`.** Upstream's Parallel integration (`d689aea`) is a different implementation; ours ships its own feature set and budget logic, so the two are not interchangeable.
+- **Folder restructure + centralized config.** Source lives under `providers/`, `extractors/`, and `curator/` with a single `config.ts` owning `~/.pi/web-search.json` (no per-provider `loadConfig()` clones). Upstream is a flat layout. This is why upstream PRs are ported here as manual re-implementations rather than cherry-picked.
+- **Namespace: now aligned.** Both this fork and upstream import from `@earendil-works/*` (upstream migrated in `da524f7`; we did the same in `0.15.0`), so this is no longer a divergence.
+
+Everything else — additional providers (Parallel, SearXNG, Olostep, Brave, Tavily, OpenAI), the `/webaccess` config command, provider-priority routing, Provider Trace, headless `auto-summary`, and the hardened redirect-aware SSRF guard — is **additive** and recorded in the [CHANGELOG](CHANGELOG.md).
