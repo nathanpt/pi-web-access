@@ -9,8 +9,9 @@ import { isParallelAvailable, searchWithParallel } from "./parallel.js";
 import { isSearXNGAvailable, searchWithSearXNG } from "./searxng.js";
 import { isOlostepAvailable, searchWithOlostep } from "./olostep.js";
 import { isBraveAvailable, searchWithBrave } from "./brave.js";
+import { isTavilyAvailable, searchWithTavily } from "./tavily.js";
 
-export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng" | "olostep" | "brave";
+export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng" | "olostep" | "brave" | "tavily";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority">;
 
 /**
@@ -24,7 +25,7 @@ export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority"
  */
 const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "perplexity", "gemini", "parallel"];
 
-const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "olostep", "brave"]);
+const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "olostep", "brave", "tavily"]);
 
 const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
 	exa: "Exa",
@@ -34,6 +35,7 @@ const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
 	searxng: "SearXNG",
 	olostep: "Olostep",
 	brave: "Brave",
+	tavily: "Tavily",
 };
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -134,7 +136,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep" || normalized === "brave"
+	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep" || normalized === "brave" || normalized === "tavily"
 		? normalized
 		: "auto";
 }
@@ -276,6 +278,22 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		throw err;
 	}
 
+	if (provider === "tavily") {
+		const result = await searchWithTavily(query, options);
+		if (result) {
+			attempts.push({ provider: "tavily", status: "success" });
+			return { ...result, provider: "tavily", trace: { ...trace, selected: "tavily" } };
+		}
+		attempts.push({ provider: "tavily", status: "no-result", detail: "no API key configured" });
+		const err = new Error(
+			"Tavily search requires an API key. Either:\n" +
+			`  1. Set tavilyApiKey in ${CONFIG_PATH}\n` +
+			"  2. Set TAVILY_API_KEY environment variable"
+		);
+		attachSearchTrace(err, { ...trace, selected: null });
+		throw err;
+	}
+
 	if (provider === "exa") {
 		const exaApiKeyConfigured = hasExaApiKey();
 		try {
@@ -381,6 +399,8 @@ async function isCandidateAvailable(p: ResolvedSearchProvider): Promise<boolean>
 			return isOlostepAvailable();
 		case "brave":
 			return isBraveAvailable();
+		case "tavily":
+			return isTavilyAvailable();
 	}
 }
 
@@ -408,6 +428,8 @@ async function runFallbackProvider(
 			return await searchWithOlostep(query, options);
 		case "brave":
 			return await searchWithBrave(query, options);
+		case "tavily":
+			return await searchWithTavily(query, options);
 	}
 }
 
