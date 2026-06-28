@@ -147,7 +147,7 @@ describe("normalizeProviderPriority", () => {
 	});
 
 	test("drops unknown names and keeps valid ones in order", async () => {
-		assert.deepEqual(await runNormalize("['brave','exa','tavily','gemini']"), ["exa", "gemini"]);
+		assert.deepEqual(await runNormalize("['foobar','exa','quux','gemini']"), ["exa", "gemini"]);
 	});
 
 	test("rejects meta-values auto and priority inside the list", async () => {
@@ -166,7 +166,7 @@ describe("normalizeProviderPriority", () => {
 	});
 
 	test("returns null when all entries are invalid", async () => {
-		assert.equal(await runNormalize("['brave','tavily']"), null);
+		assert.equal(await runNormalize("['foobar','quux']"), null);
 		assert.equal(await runNormalize("[42, true, null]"), null);
 	});
 
@@ -256,7 +256,7 @@ console.log(JSON.stringify({ provider: res.provider }));
 	test("priority mode with an invalid providerPriority falls back to built-in order", async () => {
 		// providerPriority is all junk -> normalized to null -> built-in order.
 		const home = await createTempHome();
-		await writeWebSearchConfig(home, { providerPriority: ["brave", "tavily", 42] });
+		await writeWebSearchConfig(home, { providerPriority: ["foobar", "quux", 42] });
 		const child = runSearch(home, `
 ${buildFetchMockScript([{ urlMatch: "api.exa.ai/answer", response: { answer: "Exa fallback.", results: [] } }])}
 const res = await search("query", { provider: "priority" });

@@ -35,6 +35,9 @@ export interface RawWebSearchConfig {
 	cloudflareApiKey?: unknown;
 	olostepApiKey?: unknown;
 	searxngBaseUrl?: unknown;
+	braveApiKey?: unknown;
+	tavilyApiKey?: unknown;
+	openaiApiKey?: unknown;
 	// Browser cookies
 	chromeProfile?: unknown;
 	allowBrowserCookies?: unknown;
@@ -207,6 +210,9 @@ const CREDENTIAL_SOURCES: CredentialSource[] = [
 	{ provider: "perplexity", env: "PERPLEXITY_API_KEY", configKey: "perplexityApiKey" },
 	{ provider: "parallel", env: "PARALLEL_API_KEY", configKey: "parallelApiKey" },
 	{ provider: "gemini", env: "GEMINI_API_KEY", configKey: "geminiApiKey" },
+	{ provider: "brave", env: "BRAVE_API_KEY", configKey: "braveApiKey" },
+	{ provider: "tavily", env: "TAVILY_API_KEY", configKey: "tavilyApiKey" },
+	{ provider: "openai", env: "OPENAI_API_KEY", configKey: "openaiApiKey" },
 ];
 
 /** Look up the credential source record for a concrete provider name. */

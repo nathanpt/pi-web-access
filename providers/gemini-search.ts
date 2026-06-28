@@ -8,8 +8,11 @@ import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
 import { isParallelAvailable, searchWithParallel } from "./parallel.js";
 import { isSearXNGAvailable, searchWithSearXNG } from "./searxng.js";
 import { isOlostepAvailable, searchWithOlostep } from "./olostep.js";
+import { isBraveAvailable, searchWithBrave } from "./brave.js";
+import { isTavilyAvailable, searchWithTavily } from "./tavily.js";
+import { isOpenAISearchAvailable, searchWithOpenAI } from "./openai-search.js";
 
-export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng" | "olostep";
+export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng" | "olostep" | "brave" | "tavily" | "openai";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority">;
 
 /**
@@ -23,7 +26,7 @@ export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority"
  */
 const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "perplexity", "gemini", "parallel"];
 
-const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "olostep"]);
+const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "olostep", "brave", "tavily", "openai"]);
 
 const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
 	exa: "Exa",
@@ -32,6 +35,9 @@ const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
 	parallel: "Parallel",
 	searxng: "SearXNG",
 	olostep: "Olostep",
+	brave: "Brave",
+	tavily: "Tavily",
+	openai: "OpenAI",
 };
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -132,7 +138,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep"
+	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep" || normalized === "brave" || normalized === "tavily" || normalized === "openai"
 		? normalized
 		: "auto";
 }
@@ -258,6 +264,54 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		throw err;
 	}
 
+	if (provider === "brave") {
+		const result = await searchWithBrave(query, options);
+		if (result) {
+			attempts.push({ provider: "brave", status: "success" });
+			return { ...result, provider: "brave", trace: { ...trace, selected: "brave" } };
+		}
+		attempts.push({ provider: "brave", status: "no-result", detail: "no API key configured" });
+		const err = new Error(
+			"Brave search requires an API key. Either:\n" +
+			`  1. Set braveApiKey in ${CONFIG_PATH}\n` +
+			"  2. Set BRAVE_API_KEY environment variable"
+		);
+		attachSearchTrace(err, { ...trace, selected: null });
+		throw err;
+	}
+
+	if (provider === "tavily") {
+		const result = await searchWithTavily(query, options);
+		if (result) {
+			attempts.push({ provider: "tavily", status: "success" });
+			return { ...result, provider: "tavily", trace: { ...trace, selected: "tavily" } };
+		}
+		attempts.push({ provider: "tavily", status: "no-result", detail: "no API key configured" });
+		const err = new Error(
+			"Tavily search requires an API key. Either:\n" +
+			`  1. Set tavilyApiKey in ${CONFIG_PATH}\n` +
+			"  2. Set TAVILY_API_KEY environment variable"
+		);
+		attachSearchTrace(err, { ...trace, selected: null });
+		throw err;
+	}
+
+	if (provider === "openai") {
+		const result = await searchWithOpenAI(query, options);
+		if (result) {
+			attempts.push({ provider: "openai", status: "success" });
+			return { ...result, provider: "openai", trace: { ...trace, selected: "openai" } };
+		}
+		attempts.push({ provider: "openai", status: "no-result", detail: "no API key configured" });
+		const err = new Error(
+			"OpenAI search requires an API key. Either:\n" +
+			`  1. Set openaiApiKey in ${CONFIG_PATH}\n` +
+			"  2. Set OPENAI_API_KEY environment variable"
+		);
+		attachSearchTrace(err, { ...trace, selected: null });
+		throw err;
+	}
+
 	if (provider === "exa") {
 		const exaApiKeyConfigured = hasExaApiKey();
 		try {
@@ -361,6 +415,12 @@ async function isCandidateAvailable(p: ResolvedSearchProvider): Promise<boolean>
 			return isSearXNGAvailable();
 		case "olostep":
 			return isOlostepAvailable();
+		case "brave":
+			return isBraveAvailable();
+		case "tavily":
+			return isTavilyAvailable();
+		case "openai":
+			return isOpenAISearchAvailable();
 	}
 }
 
@@ -386,6 +446,12 @@ async function runFallbackProvider(
 			return await searchWithSearXNG(query, options);
 		case "olostep":
 			return await searchWithOlostep(query, options);
+		case "brave":
+			return await searchWithBrave(query, options);
+		case "tavily":
+			return await searchWithTavily(query, options);
+		case "openai":
+			return await searchWithOpenAI(query, options);
 	}
 }
 
