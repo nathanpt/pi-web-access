@@ -53,6 +53,12 @@ test("validateProvider accepts known + rejects unknown", () => {
 	assert.equal(validateProvider("perplexity").ok, true);
 	assert.equal(validateProvider("auto").value, "auto");
 	assert.equal(validateProvider("parallel").ok, true);
+	// All opt-in providers are accepted (regression guard for the drift that
+	// made /webaccess provider <new> reject valid providers — list is now
+	// derived from ALL_PROVIDERS so it can't go stale again).
+	for (const p of ["searxng", "olostep", "brave", "tavily", "openai"]) {
+		assert.equal(validateProvider(p).ok, true, `${p} should be valid`);
+	}
 	assert.equal(validateProvider("bogus").ok, false);
 	assert.match(validateProvider("bogus").error ?? "", /unknown provider/);
 });
@@ -79,6 +85,10 @@ test("validateProviderPriority dedupes + rejects unknowns", () => {
 	assert.equal(validateProviderPriority("exa,bogus").ok, false);
 	// meta-values are rejected in priority lists
 	assert.equal(validateProviderPriority("auto,gemini").ok, false);
+	// opt-in providers are accepted in priority lists (CONCRETE now derives
+	// from ALL_PROVIDERS, so it can't drift).
+	assert.equal(validateProviderPriority("brave,tavily,openai").ok, true);
+	assert.deepEqual(validateProviderPriority("brave,tavily,openai").value, ["brave", "tavily", "openai"]);
 });
 
 test("validateSearchModel rejects empty + whitespace", () => {

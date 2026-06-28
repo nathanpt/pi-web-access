@@ -59,6 +59,16 @@ test("getProviderCredentialStatus reports provenance per provider", () => {
 	// gemini missing key, no gateway → unavailable
 	assert.equal(byName.gemini.provenance, "missing");
 	assert.equal(byName.gemini.available, false);
+
+	// All key-gated providers surface in the status table (olostep was once
+	// missing from CREDENTIAL_SOURCES and silently absent here — regression guard
+	// that it now appears). SearXNG is correctly absent (no key, uses a base URL).
+	assert.ok(byName.olostep, "olostep must surface in credential status");
+	assert.equal(byName.olostep.provenance, "missing");
+	for (const p of ["brave", "tavily", "openai"]) {
+		assert.ok(byName[p], `${p} must surface in credential status`);
+	}
+	assert.equal(byName.searxng, undefined, "searxng uses a base URL, not a key");
 });
 
 test("exa is available without a key (MCP fallback) and notes it", () => {

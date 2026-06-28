@@ -213,6 +213,7 @@ const CREDENTIAL_SOURCES: CredentialSource[] = [
 	{ provider: "brave", env: "BRAVE_API_KEY", configKey: "braveApiKey" },
 	{ provider: "tavily", env: "TAVILY_API_KEY", configKey: "tavilyApiKey" },
 	{ provider: "openai", env: "OPENAI_API_KEY", configKey: "openaiApiKey" },
+	{ provider: "olostep", env: "OLOSTEP_API_KEY", configKey: "olostepApiKey" },
 ];
 
 /** Look up the credential source record for a concrete provider name. */
