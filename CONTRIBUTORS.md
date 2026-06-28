@@ -17,7 +17,7 @@ workflow.
 
 | Name | Handle | Role |
 | --- | --- | --- |
-| Nathan Peet | [@nathanpt](https://github.com/nathanpt) | Fork maintainer. Provider-priority routing, headless `auto-summary` workflow, Parallel provider integration, the subfolder restructure, and all upstream integrations on this fork. |
+| Nathan Peet | [@nathanpt](https://github.com/nathanpt) | Fork maintainer. Provider-priority routing, headless `auto-summary` workflow, Parallel/SearXNG/Olostep/Brave/Tavily/OpenAI provider integrations, the subfolder restructure, the `/webaccess` config-management surface, Provider Trace v1, per-callId curator concurrency, SSRF hardening, expandable error diagnostics, and all other upstream integrations on this fork. |
 
 ## Original author
 
@@ -43,6 +43,12 @@ this fork (either merged directly or cherry-picked with attribution).
 | redshift | [@sh1ftred](https://github.com/sh1ftred) | Configurable default summary model (`summaryModel` config). |
 | Whamp | [@Whamp](https://github.com/Whamp) | Active-account detection in `/google-account` (#40). |
 | Haoze Wu | [@waithz](https://github.com/waithz) | `fetch_content` parameter normalization (#88). |
+| Maximilian Kruse | [@MaxKruse](https://github.com/MaxKruse) | Per-callId curator state so parallel `web_search` tool calls no longer collide (#83). |
+| Mariano Nuñez | [@marnunez](https://github.com/marnunez) | SearXNG self-hosted metasearch provider — the only provider needing no API key (#107). |
+| Cyprian Kowalczyk | [@iRonin](https://github.com/iRonin) | Expandable Ctrl+O error/cancel diagnostics for the search tools (#99). |
+| TianZuo | [@TianZuo555](https://github.com/TianZuo555) | SSRF redirect-aware + DNS-resolving guard hardening + `ssrf.allowRanges` (#101/#102). |
+| Zeeshan Adil | [@Olostep-devs](https://github.com/Olostep-devs) | Olostep answers + scrape provider (#106). |
+| youngshine | [@smithyyang](https://github.com/smithyyang) | Tavily search provider with native synthesized answer + inline content (#78). |
 
 ## Acknowledgements
 

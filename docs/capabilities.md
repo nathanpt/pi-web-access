@@ -47,6 +47,7 @@ When Readability fails or returns only a cookie notice, the extension retries vi
 ```
 web_search(query)
   → Exa (direct API with key, MCP without) → Perplexity → Gemini API → Gemini Web (if browser cookies enabled) → Parallel (last-resort fallback if keyed)
+  → opt-in providers selectable via `provider:` / `providerPriority` (NOT in the auto chain): SearXNG (self-hosted), Olostep, Brave, Tavily, OpenAI
 
 fetch_content(url)
   → Video file?  Gemini API (Files API) → Gemini Web (if browser cookies enabled)

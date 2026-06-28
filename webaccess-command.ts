@@ -19,9 +19,13 @@ import {
 	isPlaceholderKey,
 	loadWebSearchConfig,
 } from "./config.js";
+// Derive the concrete provider list from the single source of truth so the
+// `/webaccess` validators never drift from the SearchProvider union as
+// providers are added (this is exactly the bug that made `/webaccess provider
+// brave` reject a valid provider).
+import { type SearchProvider, ALL_PROVIDERS } from "./providers/gemini-search.js";
 
-export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel";
-const VALID_PROVIDERS: ReadonlySet<string> = new Set(["auto", "priority", "perplexity", "gemini", "exa", "parallel"]);
+const VALID_PROVIDERS: ReadonlySet<string> = new Set(["auto", "priority", ...ALL_PROVIDERS]);
 
 export interface ValidationResult {
 	ok: boolean;
@@ -64,7 +68,7 @@ export function validateBoolean(value: string, field: string): ValidationResult 
 export function validateProviderPriority(value: string): ValidationResult {
 	const raw = value.trim();
 	if (!raw) return { ok: false, error: "provider-priority value is required" };
-	const CONCRETE = ["exa", "perplexity", "gemini", "parallel"];
+	const CONCRETE = [...ALL_PROVIDERS];
 	const tokens = raw.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
 	if (tokens.length === 0) return { ok: false, error: "provider-priority value is required" };
 	const unknown = tokens.filter((t) => !CONCRETE.includes(t));
