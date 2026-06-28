@@ -43,6 +43,7 @@ import { isExaAvailable } from "./providers/exa.js";
 import { isGeminiApiAvailable } from "./providers/gemini-api.js";
 import { getActiveGoogleEmail, isGeminiWebAvailable } from "./providers/gemini-web.js";
 import { isBrowserCookieAccessAllowed } from "./providers/gemini-web-config.ts";
+import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.js";
 import {
 	getWorkflowValues,
 	isCuratorAllowed,
@@ -226,8 +227,11 @@ const pendingFetches = new Map<string, AbortController>();
 let sessionActive = false;
 let widgetVisible = false;
 let widgetUnsubscribe: (() => void) | null = null;
-let activeCurator: CuratorServerHandle | null = null;
-let glimpseWin: GlimpseWindow | null = null;
+// Per-call curator state: keyed by tool callId (web_search) or a synthetic
+// `cmd:<uuid>` (the /websearch command, which has no toolCallId). Lets parallel
+// curator invocations run without colliding on shared singletons.
+const activeCurators = new Map<string, CuratorServerHandle>();
+const glimpseWins = new Map<string, GlimpseWindow>();
 let curatorStartInProgress = false;
 
 interface PendingCurate {
@@ -255,11 +259,7 @@ interface PendingCurate {
 	browserPromise?: Promise<void>;
 }
 
-let pendingCurate: PendingCurate | null = null;
-
-function cancelPendingCurate(reason: "user" | "stale" = "stale"): void {
-	pendingCurate?.cancel(reason);
-}
+const pendingCurates = new Map<string, PendingCurate>();
 
 const MAX_INLINE_CONTENT = 30000; // Content returned directly to agent
 
@@ -314,15 +314,25 @@ function abortPendingFetches(): void {
 	pendingFetches.clear();
 }
 
-function closeCurator(): void {
-	const win = glimpseWin;
-	glimpseWin = null;
-	try { win?.close(); } catch {}
-	cancelPendingCurate();
-	if (activeCurator) {
-		activeCurator.close();
-		activeCurator = null;
+function closeCurator(callId?: string): void {
+	if (callId !== undefined) {
+		const win = glimpseWins.get(callId);
+		glimpseWins.delete(callId);
+		try { win?.close(); } catch {}
+		pendingCurates.get(callId)?.cancel("stale");
+		pendingCurates.delete(callId);
+		const curator = activeCurators.get(callId);
+		activeCurators.delete(callId);
+		try { curator?.close(); } catch {}
+		return;
 	}
+	// close-all path (session shutdown / reset): tear down every active curator.
+	for (const win of glimpseWins.values()) { try { win.close(); } catch {} }
+	glimpseWins.clear();
+	for (const pc of pendingCurates.values()) { try { pc.cancel("stale"); } catch {} }
+	pendingCurates.clear();
+	for (const curator of activeCurators.values()) { try { curator.close(); } catch {} }
+	activeCurators.clear();
 }
 
 /**
@@ -635,14 +645,52 @@ export default function (pi: ExtensionAPI) {
 		};
 	}
 
-	function buildCurationCancelledReturn(reason: "user" | "stale") {
+	/** Shared collapsed/expanded renderer for an error/cancel plan from
+	 * buildSearchErrorPlan. Used by every tool renderResult's error branch so
+	 * Ctrl+O (app.tools.expand) reveals diagnostics instead of a dead-end line. */
+	function renderSearchErrorPlan(plan: SearchErrorPlan, expanded: boolean, theme: { fg: (key: string, s: string) => string; bg: (key: string, s: string) => string }) {
+		if (expanded) {
+			return new Text(plan.expanded.map((l, i) => i === 0 ? theme.fg("error", l) : theme.fg("toolOutput", l)).join("\n"), 0, 0);
+		}
+		const box = new Box(1, 0, (t) => theme.bg("toolErrorBg", t));
+		box.addChild(new Text(theme.fg("error", plan.expanded[0]), 0, 0));
+		for (const line of plan.collapsed) {
+			box.addChild(new Text(theme.fg("dim", line), 0, 0));
+		}
+		if (plan.expandHint) {
+			box.addChild(new Text(theme.fg("muted", plan.expandHint), 0, 0));
+		}
+		return box;
+	}
+
+	function buildCurationCancelledReturn(
+		reason: "user" | "stale",
+		partial?: {
+			queries?: QueryResultData[];
+			queryCount?: number;
+			browserConnected?: boolean;
+			lastHeartbeatAgeMs?: number | null;
+		},
+	) {
 		const message = `Search curation cancelled (${reason}).`;
+		const cancelledQueries = partial?.queries?.length
+			? partial.queries.map(q => ({
+				query: q.query,
+				provider: q.provider ?? null,
+				error: q.error,
+				resultCount: q.results?.length ?? 0,
+			}))
+			: undefined;
 		return {
 			content: [{ type: "text", text: message }],
 			details: {
 				error: message,
 				cancelled: true,
 				cancelReason: reason,
+				browserConnected: partial?.browserConnected,
+				lastHeartbeatAgeMs: partial?.lastHeartbeatAgeMs,
+				queryCount: partial?.queryCount,
+				cancelledQueries,
 			},
 		};
 	}
@@ -926,7 +974,7 @@ export default function (pi: ExtensionAPI) {
 		return { results, urls };
 	}
 
-	async function openCuratorBrowser(pc: PendingCurate, searchesComplete = true): Promise<void> {
+	async function openCuratorBrowser(callId: string, pc: PendingCurate, searchesComplete = true): Promise<void> {
 		let handle: CuratorServerHandle | null = null;
 		try {
 			pc.phase = "curating";
@@ -949,7 +997,7 @@ export default function (pi: ExtensionAPI) {
 				},
 				{
 					async onSummarize(selectedQueryIndices, summarizeSignal, model, feedback) {
-						if (pendingCurate !== pc) throw new Error("Curator session is no longer active.");
+						if (pendingCurates.get(callId) !== pc) throw new Error("Curator session is no longer active.");
 						pc.onUpdate?.({
 							content: [{ type: "text", text: "Generating summary draft..." }],
 							details: { phase: "generating-summary", progress: 0.9, curatorUrl: pc.curatorUrl, timeoutSeconds: pc.timeoutSeconds },
@@ -962,7 +1010,7 @@ export default function (pi: ExtensionAPI) {
 							model,
 							feedback,
 						);
-						if (pendingCurate !== pc) throw new Error("Curator session is no longer active.");
+						if (pendingCurates.get(callId) !== pc) throw new Error("Curator session is no longer active.");
 						pc.onUpdate?.({
 							content: [{ type: "text", text: "Summary draft ready — waiting for approval..." }],
 							details: { phase: "waiting-for-approval", progress: 1, curatorUrl: pc.curatorUrl, timeoutSeconds: pc.timeoutSeconds },
@@ -970,7 +1018,7 @@ export default function (pi: ExtensionAPI) {
 						return draft;
 					},
 					onSubmit(payload) {
-						if (pendingCurate !== pc) return;
+						if (pendingCurates.get(callId) !== pc) return;
 						searchAbort.abort();
 						const filtered = payload.selectedQueryIndices.length > 0
 							? filterByQueryIndices(payload.selectedQueryIndices, pc.searchResults)
@@ -992,10 +1040,10 @@ export default function (pi: ExtensionAPI) {
 							base.summaryMeta = resolvedSummary.summaryMeta;
 						}
 						pc.finish(buildSearchReturn(base));
-						closeCurator();
+						closeCurator(callId);
 					},
 					onCancel(reason) {
-						if (pendingCurate !== pc) return;
+						if (pendingCurates.get(callId) !== pc) return;
 						searchAbort.abort();
 						if (reason === "timeout") {
 							const resolvedSummary = resolveSummaryForSubmit({ selectedQueryIndices: [], summary: undefined, summaryMeta: undefined }, pc.searchResults);
@@ -1014,12 +1062,18 @@ export default function (pi: ExtensionAPI) {
 								summaryMeta: resolvedSummary.summaryMeta,
 							}));
 						} else {
-							pc.finish(buildCurationCancelledReturn(reason));
+							const conn = activeCurators.get(callId)?.getConnectionState();
+							pc.finish(buildCurationCancelledReturn(reason, {
+								queries: Array.from(pc.searchResults.values()),
+								queryCount: pc.queryList.length,
+								browserConnected: conn?.browserConnected,
+								lastHeartbeatAgeMs: conn?.lastHeartbeatAgeMs,
+							}));
 						}
-						closeCurator();
+						closeCurator(callId);
 					},
 					onProviderChange(provider) {
-						if (pendingCurate !== pc) return;
+						if (pendingCurates.get(callId) !== pc) return;
 						const normalized = normalizeProviderInput(provider);
 						if (!normalized || normalized === "auto") return;
 						pc.defaultProvider = normalized;
@@ -1031,7 +1085,7 @@ export default function (pi: ExtensionAPI) {
 						}
 					},
 					async onAddSearch(query, queryIndex, provider) {
-						if (pendingCurate !== pc) throw new Error("Curator session is no longer active.");
+						if (pendingCurates.get(callId) !== pc) throw new Error("Curator session is no longer active.");
 						const normalizedProvider = normalizeProviderInput(provider);
 						const requestedProvider = !normalizedProvider || normalizedProvider === "auto"
 							? pc.defaultProvider
@@ -1045,7 +1099,7 @@ export default function (pi: ExtensionAPI) {
 								includeContent: pc.includeContent,
 								signal: addSearchSignal,
 							});
-							if (pendingCurate !== pc) throw new Error("Curator session is no longer active.");
+							if (pendingCurates.get(callId) !== pc) throw new Error("Curator session is no longer active.");
 							pc.searchResults.set(queryIndex, { query, answer, results, error: null, provider: actualProvider, trace });
 							if (inlineContent) pc.allInlineContent.push(...inlineContent);
 							return {
@@ -1055,25 +1109,25 @@ export default function (pi: ExtensionAPI) {
 							};
 						} catch (err) {
 							const message = err instanceof Error ? err.message : String(err);
-							if (pendingCurate === pc) {
+							if (pendingCurates.get(callId) === pc) {
 								pc.searchResults.set(queryIndex, { query, answer: "", results: [], error: message, provider: requestedProvider });
 							}
 							throw err;
 						}
 					},
 					async onRewriteQuery(query, rewriteSignal) {
-						if (pendingCurate !== pc) throw new Error("Curator session is no longer active.");
+						if (pendingCurates.get(callId) !== pc) throw new Error("Curator session is no longer active.");
 						return rewriteSearchQuery(query, pc.summaryContext, rewriteSignal);
 					},
 				},
 			);
 
-			if (pendingCurate !== pc) {
+			if (pendingCurates.get(callId) !== pc) {
 				handle.close();
 				return;
 			}
 
-			activeCurator = handle;
+			activeCurators.set(callId, handle);
 			pc.curatorUrl = handle.url;
 
 			for (const [qi, data] of pc.searchResults) {
@@ -1104,18 +1158,18 @@ export default function (pi: ExtensionAPI) {
 			if (open) {
 				try {
 					const win = openInGlimpse(open, handle.url, "Search Curator");
-					glimpseWin = win;
+					glimpseWins.set(callId, win);
 					win.on("closed", () => {
-						if (glimpseWin === win) {
-							glimpseWin = null;
-							closeCurator();
+						if (glimpseWins.get(callId) === win) {
+							glimpseWins.delete(callId);
+							closeCurator(callId);
 						}
 					});
 					return;
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
 					console.error(`Failed to open Glimpse curator window: ${message}`);
-					glimpseWin = null;
+					glimpseWins.delete(callId);
 				}
 			}
 			await openInBrowser(pi, handle.url);
@@ -1141,8 +1195,8 @@ export default function (pi: ExtensionAPI) {
 			}
 			const message = err instanceof Error ? err.message : String(err);
 			console.error(`Failed to open curator UI: ${message}`);
-			if (pendingCurate === pc || (handle && activeCurator === handle)) {
-				closeCurator();
+			if (pendingCurates.get(callId) === pc || (handle && activeCurators.get(callId) === handle)) {
+				closeCurator(callId);
 			}
 		}
 	}
@@ -1150,10 +1204,12 @@ export default function (pi: ExtensionAPI) {
 	pi.registerShortcut(curateKey, {
 		description: "Review search results",
 		handler: async (ctx) => {
-			if (!pendingCurate) return;
+			const entries = [...pendingCurates.entries()];
+			if (entries.length === 0) return;
+			const [callId, pc] = entries[entries.length - 1];
 
-			if (pendingCurate.phase === "searching") {
-				pendingCurate.browserPromise = openCuratorBrowser(pendingCurate, false);
+			if (pc.phase === "searching") {
+				pc.browserPromise = openCuratorBrowser(callId, pc, false);
 				ctx.ui.notify("Opening curator — remaining searches will stream in", "info");
 				return;
 			}
@@ -1216,7 +1272,7 @@ export default function (pi: ExtensionAPI) {
 			),
 		}),
 
-		async execute(_toolCallId, params, signal, onUpdate, ctx) {
+		async execute(callId, params, signal, onUpdate, ctx) {
 			const rawQueryList: unknown[] = Array.isArray(params.queries)
 				? params.queries
 				: (params.query !== undefined ? [params.query] : []);
@@ -1224,10 +1280,10 @@ export default function (pi: ExtensionAPI) {
 			const currentConfig = loadConfigForExtensionInit();
 			const workflow = resolveWorkflow(params.workflow ?? currentConfig.workflow, ctx?.hasUI !== false, isCuratorAllowed(currentConfig));
 			let shouldCurate = workflow === "summary-review";
-			if (shouldCurate && (pendingCurate || curatorStartInProgress)) {
+			if (shouldCurate && curatorStartInProgress) {
 				shouldCurate = false;
 				onUpdate?.({
-					content: [{ type: "text", text: "Another search curator is active — running this search without browser review..." }],
+					content: [{ type: "text", text: "Another search curator is starting up — running this search without browser review..." }],
 					details: { phase: "search", progress: 0, curatorSkipped: "concurrent" },
 				});
 			}
@@ -1250,7 +1306,7 @@ export default function (pi: ExtensionAPI) {
 				curatorStartInProgress = true;
 
 				try {
-					closeCurator();
+					closeCurator(callId);
 
 					let resolvePromise: (value: unknown) => void = () => {};
 					const promise = new Promise<unknown>((resolve) => {
@@ -1309,23 +1365,29 @@ export default function (pi: ExtensionAPI) {
 						cancelled = true;
 						pc.abortSearches();
 						signal?.removeEventListener("abort", onAbort);
-						pendingCurate = null;
+						pendingCurates.delete(callId);
 						resolvePromise(value);
 					};
 
 					const cancel = (reason: "user" | "stale" = "stale") => {
 						if (cancelled) return;
-						finish(buildCurationCancelledReturn(reason));
+						const conn = activeCurators.get(callId)?.getConnectionState();
+						finish(buildCurationCancelledReturn(reason, {
+							queries: Array.from(searchResults.values()),
+							queryCount: queryList.length,
+							browserConnected: conn?.browserConnected,
+							lastHeartbeatAgeMs: conn?.lastHeartbeatAgeMs,
+						}));
 					};
 
 					pc.finish = finish;
 					pc.cancel = cancel;
 
-					const onAbort = () => closeCurator();
-					pendingCurate = pc;
+					const onAbort = () => closeCurator(callId);
+					pendingCurates.set(callId, pc);
 					curatorStartInProgress = false;
 					signal?.addEventListener("abort", onAbort, { once: true });
-					pc.browserPromise = openCuratorBrowser(pc, false);
+					pc.browserPromise = openCuratorBrowser(callId, pc, false);
 
 					for (let qi = 0; qi < queryList.length; qi++) {
 						if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
@@ -1334,6 +1396,7 @@ export default function (pi: ExtensionAPI) {
 							details: { phase: "searching", progress: qi / queryList.length, currentQuery: queryList[qi] },
 						});
 						const requestedProvider = pc.defaultProvider;
+						const curator = activeCurators.get(callId);
 						try {
 							const { answer, results, inlineContent, provider, trace } = await search(queryList[qi], {
 								provider: requestedProvider,
@@ -1346,8 +1409,8 @@ export default function (pi: ExtensionAPI) {
 							if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
 							searchResults.set(qi, { query: queryList[qi], answer, results, error: null, provider, trace });
 							if (inlineContent) allInlineContent.push(...inlineContent);
-							if (activeCurator) {
-								activeCurator.pushResult(qi, {
+							if (curator) {
+								curator.pushResult(qi, {
 									answer,
 									results: results.map(r => ({ title: r.title, url: r.url, domain: extractDomain(r.url) })),
 									provider,
@@ -1357,8 +1420,8 @@ export default function (pi: ExtensionAPI) {
 							if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
 							const message = err instanceof Error ? err.message : String(err);
 							searchResults.set(qi, { query: queryList[qi], answer: "", results: [], error: message, provider: requestedProvider });
-							if (activeCurator) {
-								activeCurator.pushError(qi, message, requestedProvider);
+							if (curator) {
+								curator.pushError(qi, message, requestedProvider);
 							}
 						}
 					}
@@ -1369,8 +1432,9 @@ export default function (pi: ExtensionAPI) {
 					}
 
 					await pc.browserPromise;
-					if (activeCurator && !cancelled) {
-						activeCurator.searchesDone();
+					const curator = activeCurators.get(callId);
+					if (curator && !cancelled) {
+						curator.searchesDone();
 						pc.onUpdate?.({
 							content: [{ type: "text", text: "All searches complete — waiting for summary approval in browser..." }],
 							details: {
@@ -1589,6 +1653,8 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (details?.error) {
+				const plan = buildSearchErrorPlan(details as SearchErrorDetails);
+				if (plan) return renderSearchErrorPlan(plan, expanded, theme);
 				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
 			}
 
@@ -1760,6 +1826,8 @@ export default function (pi: ExtensionAPI) {
 		renderResult(result, { expanded }, theme) {
 			const details = result.details as { query?: string; maxTokens?: number; error?: string };
 			if (details?.error) {
+				const plan = buildSearchErrorPlan({ error: details.error, extraLines: details.query ? [`query: ${details.query}`] : [] });
+				if (plan) return renderSearchErrorPlan(plan, expanded, theme);
 				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
 			}
 
@@ -1962,6 +2030,13 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (details?.error) {
+				const extras: string[] = [];
+				if (typeof details.urlCount === "number" || typeof details.successful === "number") {
+					extras.push(`urls: ${details.successful ?? 0}/${details.urlCount ?? 0} succeeded`);
+				}
+				if (details.responseId) extras.push(`response id: ${details.responseId}`);
+				const plan = buildSearchErrorPlan({ error: details.error, extraLines: extras });
+				if (plan) return renderSearchErrorPlan(plan, expanded, theme);
 				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
 			}
 
@@ -2150,6 +2225,12 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			if (details?.error) {
+				const extras: string[] = [];
+				if (details.query) extras.push(`query: ${details.query}`);
+				else if (details.url) extras.push(`url: ${details.url}`);
+				else if (details.title) extras.push(`resource: ${details.title}`);
+				const plan = buildSearchErrorPlan({ error: details.error, extraLines: extras });
+				if (plan) return renderSearchErrorPlan(plan, expanded, theme);
 				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
 			}
 
@@ -2192,6 +2273,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const sessionToken = randomUUID();
+			const commandCallId = `cmd:${sessionToken}`;
 
 			const raw = args.trim();
 			const queries = raw.length > 0
@@ -2247,7 +2329,7 @@ export default function (pi: ExtensionAPI) {
 					},
 					{
 						async onSummarize(selectedQueryIndices, summarizeSignal, model, feedback) {
-							if (commandHandle && activeCurator !== commandHandle) {
+							if (commandHandle && activeCurators.get(commandCallId) !== commandHandle) {
 								throw new Error("Curator session is no longer active.");
 							}
 							return generateSummaryForSelectedIndices(
@@ -2260,7 +2342,7 @@ export default function (pi: ExtensionAPI) {
 							);
 						},
 						onSubmit(payload) {
-							if (commandHandle && activeCurator !== commandHandle) return;
+							if (commandHandle && activeCurators.get(commandCallId) !== commandHandle) return;
 							aborted = true;
 							searchAbort.abort();
 							const filtered = payload.selectedQueryIndices.length > 0
@@ -2281,10 +2363,10 @@ export default function (pi: ExtensionAPI) {
 								base.summaryMeta = resolvedSummary.summaryMeta;
 							}
 							sendFollowUpFromReturn(buildSearchReturn(base));
-							closeCurator();
+							closeCurator(commandCallId);
 						},
 						onCancel(reason) {
-							if (commandHandle && activeCurator !== commandHandle) return;
+							if (commandHandle && activeCurators.get(commandCallId) !== commandHandle) return;
 							aborted = true;
 							searchAbort.abort();
 							if (reason === "timeout") {
@@ -2302,10 +2384,10 @@ export default function (pi: ExtensionAPI) {
 									summaryMeta: resolvedSummary.summaryMeta,
 								}));
 							}
-							closeCurator();
+							closeCurator(commandCallId);
 						},
 						onProviderChange(provider) {
-							if (commandHandle && activeCurator !== commandHandle) return;
+							if (commandHandle && activeCurators.get(commandCallId) !== commandHandle) return;
 							const normalized = normalizeProviderInput(provider);
 							if (!normalized || normalized === "auto") return;
 							currentProvider = normalized;
@@ -2317,7 +2399,7 @@ export default function (pi: ExtensionAPI) {
 							}
 						},
 						async onAddSearch(query, queryIndex, provider) {
-							if (commandHandle && activeCurator !== commandHandle) {
+							if (commandHandle && activeCurators.get(commandCallId) !== commandHandle) {
 								throw new Error("Curator session is no longer active.");
 							}
 							const normalizedProvider = normalizeProviderInput(provider);
@@ -2329,7 +2411,7 @@ export default function (pi: ExtensionAPI) {
 									provider: requestedProvider,
 									signal: searchAbort.signal,
 								});
-								if (commandHandle && activeCurator !== commandHandle) {
+								if (commandHandle && activeCurators.get(commandCallId) !== commandHandle) {
 									throw new Error("Curator session is no longer active.");
 								}
 								collected.set(queryIndex, { query, answer, results, error: null, provider: actualProvider });
@@ -2340,14 +2422,14 @@ export default function (pi: ExtensionAPI) {
 								};
 							} catch (err) {
 								const message = err instanceof Error ? err.message : String(err);
-								if (!commandHandle || activeCurator === commandHandle) {
+								if (!commandHandle || activeCurators.get(commandCallId) === commandHandle) {
 									collected.set(queryIndex, { query, answer: "", results: [], error: message, provider: requestedProvider });
 								}
 								throw err;
 							}
 						},
 						async onRewriteQuery(query, rewriteSignal) {
-							if (commandHandle && activeCurator !== commandHandle) {
+							if (commandHandle && activeCurators.get(commandCallId) !== commandHandle) {
 								throw new Error("Curator session is no longer active.");
 							}
 							return rewriteSearchQuery(query, summaryContext, rewriteSignal);
@@ -2356,22 +2438,22 @@ export default function (pi: ExtensionAPI) {
 				);
 
 				commandHandle = handle;
-				activeCurator = handle;
+				activeCurators.set(commandCallId, handle);
 				const open = platform() === "darwin" ? await getGlimpseOpen() : null;
 				if (open) {
 					try {
 						const win = openInGlimpse(open, handle.url, "Search Curator");
-						glimpseWin = win;
+						glimpseWins.set(commandCallId, win);
 						win.on("closed", () => {
-							if (glimpseWin === win) {
-								glimpseWin = null;
-								closeCurator();
+							if (glimpseWins.get(commandCallId) === win) {
+								glimpseWins.delete(commandCallId);
+								closeCurator(commandCallId);
 							}
 						});
 					} catch (err) {
 						const message = err instanceof Error ? err.message : String(err);
 						console.error(`Failed to open Glimpse curator window: ${message}`);
-						glimpseWin = null;
+						glimpseWins.delete(commandCallId);
 						await openInBrowser(pi, handle.url);
 					}
 				} else {
@@ -2381,14 +2463,14 @@ export default function (pi: ExtensionAPI) {
 				if (queries.length > 0) {
 					(async () => {
 						for (let qi = 0; qi < queries.length; qi++) {
-							if (aborted || activeCurator !== handle) break;
+							if (aborted || activeCurators.get(commandCallId) !== handle) break;
 							const requestedProvider = currentProvider;
 							try {
 								const { answer, results, provider } = await search(queries[qi], {
 									provider: requestedProvider,
 									signal: searchAbort.signal,
 								});
-								if (aborted || activeCurator !== handle) break;
+								if (aborted || activeCurators.get(commandCallId) !== handle) break;
 								handle.pushResult(qi, {
 									answer,
 									results: results.map(r => ({ title: r.title, url: r.url, domain: extractDomain(r.url) })),
@@ -2396,16 +2478,16 @@ export default function (pi: ExtensionAPI) {
 								});
 								collected.set(qi, { query: queries[qi], answer, results, error: null, provider });
 							} catch (err) {
-								if (aborted || activeCurator !== handle) break;
+								if (aborted || activeCurators.get(commandCallId) !== handle) break;
 								const message = err instanceof Error ? err.message : String(err);
 								handle.pushError(qi, message, requestedProvider);
 								collected.set(qi, { query: queries[qi], answer: "", results: [], error: message, provider: requestedProvider });
 							}
 						}
-						if (!aborted && activeCurator === handle) handle.searchesDone();
+						if (!aborted && activeCurators.get(commandCallId) === handle) handle.searchesDone();
 					})();
 				} else {
-					if (activeCurator === handle) handle.searchesDone();
+					if (activeCurators.get(commandCallId) === handle) handle.searchesDone();
 				}
 			} catch (err) {
 				// Browser-launch failure is non-fatal here too: the curator server is
@@ -2422,7 +2504,7 @@ export default function (pi: ExtensionAPI) {
 						: "";
 					ctx.ui.notify(`Curator running at ${err.url} — open it manually (SSH tunnel)${hint}.`, "info");
 				} else {
-					closeCurator();
+					closeCurator(commandCallId);
 					const message = err instanceof Error ? err.message : String(err);
 					ctx.ui.notify(`Failed to open curator: ${message}`, "error");
 				}
