@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-27
+
+### Added
+- **Three opt-in `web_search` providers: Brave, Tavily, and OpenAI.** More vendor choice under the vendor-agnostic principle. All three land **opt-in** — not part of the built-in `auto` order — so a configured key never silently routes queries into the auto chain. Reachable via explicit `provider: "brave"` / `"tavily"` / `"openai"` or a `providerPriority` listing, and surfaced in the `/webaccess` status table + `set-key` / `test-key` / `clear-key` / `doctor`. Config access routes through the centralized `config.ts` (no local config clones); placeholder keys (`"your-key"`, `<...>`) are rejected for every provider, so a leftover doc value can't 401 mid-fallback.
+  - **Brave** (ports upstream `5229388`, @nicobailon) — the Brave Search API. Auth via `X-Subscription-Token` (not bearer). Brave has no API domain filter, so domain include/exclude is injected into the query string via `site:`/`NOT site:` and results are re-filtered client-side (with `count` bumped to 20 when a domain filter is present); recency maps to `freshness` (`pd`/`pw`/`pm`/`py`). No native answer — one is synthesized from snippets with source citations. Configure with `braveApiKey` (or `BRAVE_API_KEY`).
+  - **Tavily** (ports upstream `7e633a8` / #78, @smithyyang / "youngshine") — the Tavily Search API. Returns a native synthesized answer plus titles/URLs/content. The one provider in this batch that can populate inline content: when `includeContent` is true, `include_raw_content: "markdown"` is sent and each result's `raw_content` maps to inline content. Domain filters map to `include_domains`/`exclude_domains`; recency passes through as `time_range`. Configure with `tavilyApiKey` (or `TAVILY_API_KEY`).
+  - **OpenAI** (ports upstream `5229388`, @nicobailon) — built on the OpenAI Responses API with the built-in `web_search` tool. Streams the response (parses both SSE and single-JSON shapes); domain filters map to the tool's `allowed_domains`/`blocked_domains`; recency/count/domain hints are woven into the instructions (the tool can't express recency natively); citations come from `url_citation` annotations + `web_search_call` source groups, with OpenAI's `utm_source` stripped; the answer is the concatenated message text. Configure with `openaiApiKey` (or `OPENAI_API_KEY`). **Key-only for now** (plan decision D3): upstream's Codex-subscription auth via the model registry (`@earendil-works/pi-ai/compat`) intersects the deferred `@mariozechner`→`@earendil-works` namespace migration, so this port ships the plain-API-key path only; Codex-subscription auth is a tracked follow-up tied to that migration.
+
+### Changed
+- **`/webaccess help` now derives its provider lists dynamically.** The `provider`, `provider-priority`, `set-key`, `clear-key`, and `test-key` reference lines were a stale hardcoded four-provider list; they now derive from `CREDENTIAL_SOURCES`, so the help stays truthful as providers are added.
+
 ## [0.13.0] - 2026-06-27
 
 ### Fixed
