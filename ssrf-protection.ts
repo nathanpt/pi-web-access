@@ -234,6 +234,11 @@ function parseIPv6(address: string): number[] | null {
 	return groups.length === 8 && groups.every(group => group >= 0 && group <= 0xffff) ? groups : null;
 }
 
+/** True if `value` is a valid CIDR or bare IP (e.g. "198.18.0.0/15", "fd00::/8", "1.2.3.4"). Exported for `/webaccess` set-time validation. */
+export function isValidCidr(value: string): boolean {
+	return parseCidr(value.trim()) !== null;
+}
+
 /** Parse `allowRanges` config value into validated CIDR rules. Throws on malformed entries. */
 function parseAllowRanges(input: unknown): ParsedCidr[] {
 	if (input === undefined || input === null) return [];

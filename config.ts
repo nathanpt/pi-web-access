@@ -41,6 +41,8 @@ export interface RawWebSearchConfig {
 	// Browser cookies
 	chromeProfile?: unknown;
 	allowBrowserCookies?: unknown;
+	// SSRF guard (allowRanges CIDR exemptions + trustEnvProxy skip-DNS-for-proxy)
+	ssrf?: unknown;
 }
 
 let cachedConfig: RawWebSearchConfig | null = null;
@@ -299,6 +301,26 @@ export interface EffectiveConfig {
 	allowBrowserCookies: boolean;
 	browserCookieProvenance: CredentialProvenance;
 	chromeProfile: string | undefined;
+	/** SSRF guard settings (allowRanges CIDR exemptions + trustEnvProxy). */
+	ssrf: { allowRanges: string[]; trustEnvProxy: boolean };
+}
+
+/**
+ * Parse the `ssrf` block for display. Fail-safe to defaults (no ranges,
+ * trustEnvProxy off) when absent or mistyped — the canonical loader in
+ * `extract.ts` throws loudly at fetch time; the summary must not crash on a
+ * hand-edited mistype, so it shows the safe interpretation instead.
+ */
+function parseSsrfForDisplay(ssrf: unknown): { allowRanges: string[]; trustEnvProxy: boolean } {
+	if (typeof ssrf !== "object" || ssrf === null || Array.isArray(ssrf)) {
+		return { allowRanges: [], trustEnvProxy: false };
+	}
+	const obj = ssrf as { allowRanges?: unknown; trustEnvProxy?: unknown };
+	const allowRanges = Array.isArray(obj.allowRanges)
+		? obj.allowRanges.filter((e): e is string => typeof e === "string" && e.trim().length > 0).map((e) => e.trim())
+		: [];
+	const trustEnvProxy = obj.trustEnvProxy === true;
+	return { allowRanges, trustEnvProxy };
 }
 
 /**
@@ -324,5 +346,6 @@ export function getEffectiveConfig(
 		allowBrowserCookies: cookieEnv || cookieConfig,
 		browserCookieProvenance: cookieEnv ? "env" : cookieConfig ? "config" : "missing",
 		chromeProfile: normalizeOptionalString(config.chromeProfile),
+		ssrf: parseSsrfForDisplay(config.ssrf),
 	};
 }

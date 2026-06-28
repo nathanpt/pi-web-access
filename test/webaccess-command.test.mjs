@@ -38,6 +38,7 @@ const {
 	validateProviderPriority,
 	validateSearchModel,
 	validateCuratorTimeout,
+	validateAllowRanges,
 	validateApiKey,
 	handleWebAccessCommand,
 	formatWebAccessSummary,
@@ -191,6 +192,94 @@ test("set curator-timeout persists integer", () => {
 	}
 });
 
+// ---- ssrf-trust-env-proxy / ssrf-allow-ranges ----
+
+test("set ssrf-trust-env-proxy persists boolean (read-modify-write preserves allowRanges)", () => {
+	const home = isolate();
+	try {
+		// Seed an existing allowRanges so we can prove the nested merge keeps it.
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		writeFileSync(configPath(home), JSON.stringify({ ssrf: { allowRanges: ["198.18.0.0/15"], trustEnvProxy: false } }));
+		clearWebSearchConfigCache();
+		handleWebAccessCommand("ssrf-trust-env-proxy on");
+		const ssrf = readConfig(home).ssrf;
+		assert.equal(ssrf.trustEnvProxy, true);
+		assert.deepEqual(ssrf.allowRanges, ["198.18.0.0/15"], "allowRanges must be preserved across the nested write");
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("set ssrf-allow-ranges persists a validated CIDR list (preserves trustEnvProxy)", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		writeFileSync(configPath(home), JSON.stringify({ ssrf: { trustEnvProxy: true } }));
+		clearWebSearchConfigCache();
+		handleWebAccessCommand("ssrf-allow-ranges 10.0.0.0/8,fd00::/8");
+		const ssrf = readConfig(home).ssrf;
+		assert.deepEqual(ssrf.allowRanges, ["10.0.0.0/8", "fd00::/8"]);
+		assert.equal(ssrf.trustEnvProxy, true, "trustEnvProxy must be preserved across the nested write");
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("set ssrf-allow-ranges clears with empty/none", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		writeFileSync(configPath(home), JSON.stringify({ ssrf: { allowRanges: ["10.0.0.0/8"] } }));
+		clearWebSearchConfigCache();
+		handleWebAccessCommand("ssrf-allow-ranges none");
+		assert.deepEqual(readConfig(home).ssrf.allowRanges, []);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("set ssrf-allow-ranges rejects invalid CIDR without writing", () => {
+	const home = isolate();
+	try {
+		const { wrote, text } = handleWebAccessCommand("ssrf-allow-ranges not-a-cidr,999.999.999.999/8");
+		assert.equal(wrote, false);
+		assert.match(text, /invalid CIDR/i);
+		assert.equal(existsSync(configPath(home)), false, "file should not have been created on validation failure");
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("validateAllowRanges accepts valid CIDRs / IPs / empty", () => {
+	assert.deepEqual(validateAllowRanges("198.18.0.0/15, fd00::/8").value, ["198.18.0.0/15", "fd00::/8"]);
+	assert.deepEqual(validateAllowRanges("1.2.3.4").value, ["1.2.3.4"]);
+	assert.deepEqual(validateAllowRanges("").value, []);
+	assert.deepEqual(validateAllowRanges("none").value, []);
+	assert.equal(validateAllowRanges("bogus").ok, false);
+	assert.equal(validateAllowRanges("10.0.0.0/8,/15").ok, false, "/15 alone is not a valid CIDR");
+});
+
+test("formatWebAccessSummary renders the SSRF section", () => {
+	const home = isolate();
+	try {
+		mkdirSync(join(home, ".pi"), { recursive: true });
+		writeFileSync(configPath(home), JSON.stringify({ ssrf: { allowRanges: ["198.18.0.0/15"], trustEnvProxy: true } }));
+		clearWebSearchConfigCache();
+		const text = formatWebAccessSummary();
+		assert.match(text, /\*\*SSRF guard\*\*/);
+		assert.match(text, /trust env proxy: on/);
+		assert.match(text, /`198\.18\.0\.0\/15`/);
+	} finally {
+		cleanup(home);
+	}
+});
+
+test("formatWebAccessHelp documents the ssrf fields", () => {
+	const text = formatWebAccessHelp();
+	assert.match(text, /ssrf-trust-env-proxy/);
+	assert.match(text, /ssrf-allow-ranges/);
+});
+
 test("validation failure does NOT write", () => {
 	const home = isolate();
 	try {
@@ -217,7 +306,7 @@ test("unknown field returns help, does not write", () => {
 
 test("SET_FIELDS covers all documented set targets", () => {
 	assert.deepEqual([...SET_FIELDS], [
-		"provider", "workflow", "provider-priority", "allow-curator", "allow-browser-cookies", "search-model", "curator-timeout",
+		"provider", "workflow", "provider-priority", "allow-curator", "allow-browser-cookies", "search-model", "curator-timeout", "ssrf-trust-env-proxy", "ssrf-allow-ranges",
 	]);
 });
 
