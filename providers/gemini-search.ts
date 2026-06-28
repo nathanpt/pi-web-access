@@ -8,8 +8,9 @@ import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
 import { isParallelAvailable, searchWithParallel } from "./parallel.js";
 import { isSearXNGAvailable, searchWithSearXNG } from "./searxng.js";
 import { isOlostepAvailable, searchWithOlostep } from "./olostep.js";
+import { isBraveAvailable, searchWithBrave } from "./brave.js";
 
-export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng" | "olostep";
+export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng" | "olostep" | "brave";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority">;
 
 /**
@@ -23,7 +24,7 @@ export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority"
  */
 const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "perplexity", "gemini", "parallel"];
 
-const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "olostep"]);
+const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "olostep", "brave"]);
 
 const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
 	exa: "Exa",
@@ -32,6 +33,7 @@ const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
 	parallel: "Parallel",
 	searxng: "SearXNG",
 	olostep: "Olostep",
+	brave: "Brave",
 };
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -132,7 +134,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep"
+	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep" || normalized === "brave"
 		? normalized
 		: "auto";
 }
@@ -258,6 +260,22 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		throw err;
 	}
 
+	if (provider === "brave") {
+		const result = await searchWithBrave(query, options);
+		if (result) {
+			attempts.push({ provider: "brave", status: "success" });
+			return { ...result, provider: "brave", trace: { ...trace, selected: "brave" } };
+		}
+		attempts.push({ provider: "brave", status: "no-result", detail: "no API key configured" });
+		const err = new Error(
+			"Brave search requires an API key. Either:\n" +
+			`  1. Set braveApiKey in ${CONFIG_PATH}\n` +
+			"  2. Set BRAVE_API_KEY environment variable"
+		);
+		attachSearchTrace(err, { ...trace, selected: null });
+		throw err;
+	}
+
 	if (provider === "exa") {
 		const exaApiKeyConfigured = hasExaApiKey();
 		try {
@@ -361,6 +379,8 @@ async function isCandidateAvailable(p: ResolvedSearchProvider): Promise<boolean>
 			return isSearXNGAvailable();
 		case "olostep":
 			return isOlostepAvailable();
+		case "brave":
+			return isBraveAvailable();
 	}
 }
 
@@ -386,6 +406,8 @@ async function runFallbackProvider(
 			return await searchWithSearXNG(query, options);
 		case "olostep":
 			return await searchWithOlostep(query, options);
+		case "brave":
+			return await searchWithBrave(query, options);
 	}
 }
 

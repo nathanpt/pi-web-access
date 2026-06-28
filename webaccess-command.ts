@@ -210,8 +210,11 @@ export function formatWebAccessHelp(): string {
 	lines.push("/webaccess help                                       # this page (also: -h, --help)");
 	lines.push("");
 	lines.push("# routing");
-	lines.push("/webaccess provider <auto|priority|exa|perplexity|gemini|parallel>");
-	lines.push("/webaccess provider-priority <exa,perplexity,gemini,parallel>   # order for 'priority'");
+	// Routing providers derive from the credential sources so the help stays
+	// truthful as providers are added (auto/priority are the meta-modes).
+	const routingProviders = KEY_PROVIDERS.join("|");
+	lines.push(`/webaccess provider <auto|priority|${routingProviders}>`);
+	lines.push(`/webaccess provider-priority <${KEY_PROVIDERS.join(",")}>   # order for 'priority'`);
 	lines.push("/webaccess workflow <none|summary-review|auto-summary>");
 	lines.push("/webaccess allow-curator <on|off>                                # off = headless-only (summary-review -> none)");
 	lines.push("/webaccess search-model <model-id>                              # '' to clear");

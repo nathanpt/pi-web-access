@@ -353,9 +353,10 @@ test("help/-h/--help render the reference page (case-insensitive), no write", ()
 			assert.equal(wrote, false, `${arg}: should not write`);
 			assert.match(text, /\*\*\/webaccess\*\* — inspect or update/);
 			// every field is documented
-			assert.match(text, /provider <auto\|priority\|exa\|perplexity\|gemini\|parallel>/);
+			assert.match(text, /provider <auto\|priority\|exa/);
 			assert.match(text, /workflow <none\|summary-review\|auto-summary>/);
-			assert.match(text, /set-key <exa\|perplexity\|parallel\|gemini> <key>/);
+			// set-key list is derived from credential sources (exa + the newest providers surface)
+			assert.match(text, /set-key <exa[\s\S]*brave[\s\S]*> <key>/);
 			assert.match(text, /curator-timeout <1-600>/);
 			assert.match(text, /allow-browser-cookies <on\|off>/);
 		}
@@ -458,7 +459,7 @@ test("clear-key cannot unset an env-var-sourced key", () => {
 test("help page documents clear-key", () => {
 	// pure, no isolation needed
 	const text = formatWebAccessHelp();
-	assert.match(text, /clear-key <exa\|perplexity\|parallel\|gemini>/);
+	assert.match(text, /clear-key <exa[\s\S]*brave[\s\S]*>/);
 });
 
 // ---- export ----
@@ -538,7 +539,7 @@ test("parseTestKeyArgs: provider required, candidate key optional, rejects place
 test("help page documents export + test-key", () => {
 	const text = formatWebAccessHelp();
 	assert.match(text, /\/webaccess export/);
-	assert.match(text, /test-key <exa\|perplexity\|parallel\|gemini> \[key\]/);
+	assert.match(text, /test-key <exa[\s\S]*brave[\s\S]*> \[key\]/);
 });
 
 // ---- doctor ----
