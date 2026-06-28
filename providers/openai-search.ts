@@ -8,15 +8,23 @@ import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.j
 //
 // SCOPE NOTE (D3): upstream's resolveOpenAIAuth(ctx) ALSO resolves auth via the
 // model registry (getModel from @earendil-works/pi-ai/compat +
-// ctx.modelRegistry.getApiKeyAndHeaders) to use a Codex subscription token —
-// the one piece that intersects the deferred @mariozechner→@earendil-works
-// namespace migration. We port the FALLBACK PATH ONLY: OPENAI_API_KEY env /
+// ctx.modelRegistry.getApiKeyAndHeaders) to use a Codex subscription token.
+// The @mariozechner→@earendil-works namespace migration that originally blocked
+// this landed in v0.15.0, BUT the Codex path remains DEFERRED: the Codex
+// subscription backend (chatgpt.com/backend-api/codex/responses) carries NO
+// web_search support in pi-ai's implementation, the public docs say nothing
+// about web search under Codex, and the auth/URL machinery (resolveCodexUrl,
+// chatgpt-account-id, originator) is private to pi-ai's complete() dispatch —
+// not exposed via getApiKeyAndHeaders(). Driving the public Responses endpoint
+// (api.openai.com/v1/responses) with a Codex JWT as a Bearer token would be
+// rejected (wrong audience), and the Codex backend is unsupported for the
+// web_search tool. So we port the FALLBACK PATH ONLY: OPENAI_API_KEY env /
 // openaiApiKey config → plain API key against the public Responses endpoint.
 // This keeps the port pure-additive (no search()/SearchOptions signature
 // change, no ctx threading through every curator call site) and lets the
 // Responses-API + web_search-tool integration (the real value) work with any
-// key. Codex-subscription auth is a tracked follow-up tied to the namespace
-// migration.
+// key. Codex-subscription auth stays a tracked follow-up, now gated on pi-ai
+// exposing a public Codex web-search entry point rather than on the namespace.
 //
 // Two changes from the upstream source beyond D3: config access routes through
 // the centralized `config.ts` (no local loadConfig/normalizeApiKey clone — the

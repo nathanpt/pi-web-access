@@ -1,7 +1,7 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { Box, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Box, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { StringEnum, complete, type Model } from "@mariozechner/pi-ai";
+import { StringEnum, complete, type Model } from "@earendil-works/pi-ai/compat";
 import pLimit from "p-limit";
 import { fetchAllContent, type ExtractedContent } from "./extract.js";
 import { normalizeFetchContentParams } from "./fetch-params.js";

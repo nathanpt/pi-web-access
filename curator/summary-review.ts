@@ -1,5 +1,5 @@
-import { complete, type Message, type Model } from "@mariozechner/pi-ai";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { complete, type Message, type Model } from "@earendil-works/pi-ai/compat";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "../summary-model-scope.js";
 import type { QueryResultData } from "../storage.js";
 

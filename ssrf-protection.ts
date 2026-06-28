@@ -24,6 +24,16 @@ interface ValidationOptions {
 	 * strictly; an invalid entry throws so misconfiguration is not silent.
 	 */
 	allowRanges?: string[];
+	/**
+	 * When true, skip local DNS preflight for hostnames routed through an explicit
+	 * HTTP_PROXY/HTTPS_PROXY env var (respecting NO_PROXY). The localhost /
+	 * *.localhost and literal-internal-IP checks still run first, so internal
+	 * destinations stay blocked. For sandboxed setups where the proxy is the
+	 * egress policy boundary and local DNS preflight fails before reaching it.
+	 * SECURITY: assumes the proxy enforces an egress allowlist — an open/transparent
+	 * proxy weakens this guard. Ports upstream PR #109 (@DBPhoenix).
+	 */
+	trustEnvProxy?: boolean;
 }
 
 /** Parsed entry from `allowRanges`: a network address (4 or 16 bytes) + prefix length. */
@@ -57,6 +67,13 @@ export async function validateRemoteUrl(rawUrl: string | URL, options: Validatio
 
 	if (net.isIP(hostname)) {
 		assertPublicAddress(hostname, hostname, allowRanges);
+		return url;
+	}
+
+	// trustEnvProxy: skip local DNS preflight when an explicit proxy env var covers
+	// this host (and NO_PROXY does not exempt it). The localhost and literal-IP
+	// guards above already ran, so internal destinations remain blocked regardless.
+	if (options.trustEnvProxy && envProxyApplies(url, hostname)) {
 		return url;
 	}
 
@@ -105,6 +122,42 @@ export async function fetchRemoteUrl(
 
 function normalizeHostname(hostname: string): string {
 	return hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+}
+
+/**
+ * True when an explicit HTTP_PROXY/HTTPS_PROXY env var is set for the URL's
+ * protocol AND the hostname is not exempted by NO_PROXY. Used by the
+ * trustEnvProxy path to decide whether local DNS preflight can be skipped
+ * (the proxy will enforce egress policy). Returns false when no proxy is
+ * configured, so the default SSRF behavior is unchanged.
+	 */
+export function envProxyApplies(url: URL, hostname: string): boolean {
+	const proto = url.protocol.replace(":", "").toLowerCase(); // "http" | "https"
+	const proxy =
+		process.env[`${proto}_proxy`] ??
+		process.env[`${proto.toUpperCase()}_PROXY`] ??
+		process.env["all_proxy"] ??
+		process.env["ALL_PROXY"];
+	if (!proxy) return false;
+	return !hostnameMatchesNoProxy(hostname);
+}
+
+/**
+ * True when `hostname` is exempted from proxying by the NO_PROXY env var.
+	 * Matches the common conventions: comma-separated entries, exact match,
+	 * leading-dot / suffix subdomain match (".example.com" or "example.com"
+	 * covers "api.example.com"), and a bare "*" wildcard.
+	 */
+function hostnameMatchesNoProxy(hostname: string): boolean {
+	const raw = process.env["no_proxy"] ?? process.env["NO_PROXY"];
+	if (!raw) return false;
+	for (let entry of raw.split(",")) {
+		entry = entry.trim().toLowerCase().replace(/^\./, "");
+		if (!entry) continue;
+		if (entry === "*") return true;
+		if (hostname === entry || hostname.endsWith(`.${entry}`)) return true;
+	}
+	return false;
 }
 
 function assertPublicAddress(address: string, hostname: string, allowRanges: ParsedCidr[] = []): void {
@@ -179,6 +232,11 @@ function parseIPv6(address: string): number[] | null {
 		return parseInt(part, 16);
 	});
 	return groups.length === 8 && groups.every(group => group >= 0 && group <= 0xffff) ? groups : null;
+}
+
+/** True if `value` is a valid CIDR or bare IP (e.g. "198.18.0.0/15", "fd00::/8", "1.2.3.4"). Exported for `/webaccess` set-time validation. */
+export function isValidCidr(value: string): boolean {
+	return parseCidr(value.trim()) !== null;
 }
 
 /** Parse `allowRanges` config value into validated CIDR rules. Throws on malformed entries. */

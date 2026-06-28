@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-28
+
+### Changed
+- **Migrated `@mariozechner/*` host-package imports to `@earendil-works/*`.** The longest-standing deferred structural item. `@mariozechner/pi-coding-agent` is deprecated on npm (frozen at 0.73.1; the maintainer's host already runs `@earendil-works@0.80.1`, and `@mariozechner` is no longer installed locally). Retargets the six host-package import sites in `index.ts`, `storage.ts`, and `curator/summary-review.ts`; `StringEnum`/`complete`/`Model`/`Message` now resolve from `@earendil-works/pi-ai/compat`. Relative imports keep `.js` extensions (still valid under host 0.80.1); `package.json` is unchanged (host packages are runtime-injected, intentionally absent from dependencies). Manual re-implementation of upstream `da524f7`, scoped to namespace-only. This unblocks the OpenAI Codex-subscription auth follow-up's *prerequisite* (see below).
+
+### Added
+- **`ssrf.trustEnvProxy` config option** for proxied/sandboxed environments (ports upstream PR #109, @DBPhoenix). When enabled, the SSRF guard skips local DNS preflight for hostnames routed through an explicit `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` env var (respecting `NO_PROXY`), while **still blocking `localhost`, `*.localhost`, and literal internal IPs**. This is for sandboxed setups (e.g. OpenShell) where the proxy *is* the egress policy boundary and local DNS preflight fails before the request reaches that policy boundary. **Security note:** this assumes the proxy enforces an egress allowlist — an open/transparent proxy weakens the guard. Off by default. Configure in `~/.pi/web-search.json` under `ssrf.trustEnvProxy`, or via `/webaccess ssrf-trust-env-proxy on`.
+- **`/webaccess` now surfaces the SSRF guard.** The summary renders an **SSRF guard** section (trust-env-proxy + allow-ranges), and two new set-fields are available: `ssrf-trust-env-proxy <on|off>` and `ssrf-allow-ranges <cidr,...>` (use `''` or `none` to clear). CIDR entries are validated at set time via the newly-exported `isValidCidr`. A nested read-modify-write preserves the sibling field on each write (the shallow top-level merge in `saveWebSearchConfig` would otherwise wipe it). The `doctor` gains a finding for `trustEnvProxy` enabled without any proxy env var set.
+
+### Notes
+- **OpenAI Codex-subscription auth (D3) re-deferred.** Originally gated on the namespace migration (now done); investigated and the Codex subscription backend (`chatgpt.com/backend-api/codex/responses`) carries **no `web_search` support** in pi-ai's implementation, and the auth/URL machinery (`resolveCodexUrl`, `chatgpt-account-id`, `originator`) is private to pi-ai's `complete()` dispatch — not exposed via `getApiKeyAndHeaders()`. The OpenAI `web_search` provider remains key-only (`OPENAI_API_KEY` against the public Responses endpoint). Re-gated on pi-ai exposing a public Codex web-search entry point. The D3 scope note in `providers/openai-search.ts` is updated with the new rationale.
+
 ## [0.14.0] - 2026-06-27
 
 ### Added

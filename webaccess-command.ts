@@ -24,6 +24,7 @@ import {
 // providers are added (this is exactly the bug that made `/webaccess provider
 // brave` reject a valid provider).
 import { type SearchProvider, ALL_PROVIDERS } from "./providers/gemini-search.js";
+import { isValidCidr } from "./ssrf-protection.js";
 
 const VALID_PROVIDERS: ReadonlySet<string> = new Set(["auto", "priority", ...ALL_PROVIDERS]);
 
@@ -107,6 +108,26 @@ export function validateCuratorTimeout(value: string): ValidationResult {
 	return { ok: true, value: n };
 }
 
+/**
+ * Validate an `ssrf-allow-ranges` value: a comma-separated list of CIDR strings
+ * (e.g. "198.18.0.0/15,fd00::/8"). An empty value clears the list. Each entry
+ * is checked with the shipped CIDR parser so a typo is rejected at set time
+ * rather than throwing at fetch time.
+ */
+export function validateAllowRanges(value: string): ValidationResult {
+	const normalized = value.trim();
+	if (normalized === "" || normalized.toLowerCase() === "none" || normalized.toLowerCase() === "clear") {
+		return { ok: true, value: [] };
+	}
+	const tokens = normalized.split(",").map((t) => t.trim()).filter(Boolean);
+	if (tokens.length === 0) return { ok: true, value: [] };
+	const invalid = tokens.filter((t) => !isValidCidr(t));
+	if (invalid.length > 0) {
+		return { ok: false, error: `invalid CIDR entries: ${invalid.map((t) => `"${t}"`).join(", ")}. Examples: "198.18.0.0/15", "fd00::/8", "1.2.3.4".` };
+	}
+	return { ok: true, value: tokens };
+}
+
 const BOOL_FIELDS = ["allow-browser-cookies"] as const;
 
 /** Known set-fields for `/webaccess <field> <value>`. */
@@ -118,6 +139,8 @@ export const SET_FIELDS = [
 	"allow-browser-cookies",
 	"search-model",
 	"curator-timeout",
+	"ssrf-trust-env-proxy",
+	"ssrf-allow-ranges",
 ] as const;
 export type SetField = (typeof SET_FIELDS)[number];
 
@@ -185,8 +208,12 @@ export function formatWebAccessSummary(): string {
 	lines.push(`- allow browser cookies: ${boolLabel(eff.allowBrowserCookies)} _(${provenanceLabel(eff.browserCookieProvenance)})_`);
 	if (eff.chromeProfile) lines.push(`- chrome profile: \`${eff.chromeProfile}\``);
 	lines.push("");
+	lines.push("**SSRF guard**");
+	lines.push(`- trust env proxy: ${boolLabel(eff.ssrf.trustEnvProxy)} _(skip DNS preflight for HTTP_PROXY/HTTPS_PROXY hosts)_`);
+	lines.push(`- allow ranges: ${eff.ssrf.allowRanges.length ? eff.ssrf.allowRanges.map((r) => `\`${r}\``).join(", ") : "_(none)_"}`);
+	lines.push("");
 	lines.push("_Use `/webaccess <field> <value>` to change a setting. Fields: " +
-		"provider, workflow, provider-priority, allow-browser-cookies, search-model, curator-timeout. " +
+		"provider, workflow, provider-priority, allow-browser-cookies, search-model, curator-timeout, ssrf-trust-env-proxy, ssrf-allow-ranges. " +
 		"Set an API key with `/webaccess set-key <provider> <key>`._");
 
 	return lines.join("\n");
@@ -223,6 +250,10 @@ export function formatWebAccessHelp(): string {
 	lines.push("/webaccess allow-curator <on|off>                                # off = headless-only (summary-review -> none)");
 	lines.push("/webaccess search-model <model-id>                              # '' to clear");
 	lines.push("/webaccess curator-timeout <1-600>                              # seconds");
+	lines.push("");
+	lines.push("# ssrf guard");
+	lines.push("/webaccess ssrf-trust-env-proxy <on|off>                         # skip DNS preflight for proxied hosts (sandbox/proxy egress)");
+	lines.push("/webaccess ssrf-allow-ranges <cidr,...>                          # '' or 'none' to clear. e.g. 198.18.0.0/15,fd00::/8");
 	lines.push("");
 	lines.push("# credentials");
 	lines.push(`/webaccess set-key <${KEY_PROVIDERS.join("|")}> <key>              # writes config, never echoed`);
@@ -360,6 +391,20 @@ export function runDoctor(): DoctorFinding[] {
 		});
 	}
 
+	// 5. trustEnvProxy is on but no proxy env var is set — it's a no-op that
+	//    usually signals the user meant to set HTTP_PROXY/HTTPS_PROXY too.
+	if (eff.ssrf.trustEnvProxy) {
+		const hasProxy = Boolean(process.env.HTTP_PROXY ?? process.env.http_proxy ?? process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.ALL_PROXY ?? process.env.all_proxy);
+		if (!hasProxy) {
+			findings.push({
+				severity: "warn",
+				check: "ssrf.trustEnvProxy",
+				detail: "`ssrf.trustEnvProxy` is on but no `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` env var is set, so it has no effect. Set one (or turn this off).",
+				fix: "/webaccess ssrf-trust-env-proxy off",
+			});
+		}
+	}
+
 	return findings;
 }
 
@@ -491,6 +536,14 @@ export function handleWebAccessCommand(args: string): WebAccessResult {
 		case "curator-timeout":
 			result = validateCuratorTimeout(rawValue);
 			configUpdate = result.ok ? { curatorTimeoutSeconds: result.value } : {};
+			break;
+		case "ssrf-trust-env-proxy":
+			result = validateBoolean(rawValue, field);
+			configUpdate = result.ok ? { ssrf: { ...current.ssrf, trustEnvProxy: result.value } } : {};
+			break;
+		case "ssrf-allow-ranges":
+			result = validateAllowRanges(rawValue);
+			configUpdate = result.ok ? { ssrf: { ...current.ssrf, allowRanges: result.value } } : {};
 			break;
 	}
 
