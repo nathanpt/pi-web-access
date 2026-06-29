@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 
+import { buildSearchQueriesFromObjective } from "../providers/parallel.ts";
+
 // Child-process integration tests for parallel.ts.
 //
 // Harness mines the isolation pattern from upstream PR #91's
@@ -19,10 +21,11 @@ import { describe, test } from "node:test";
 // searchWithParallel, extractWithParallel) end-to-end as a true regression
 // guard rather than a reimplementation.
 //
-// Assertions describe THIS repo's leaner parallel.ts. PR #91 is NOT a literal
-// duplicate: it adds placeholder-key detection, query expansion, inlineContent,
-// and a MIN_USEFUL_CONTENT gate that we do not have, so those PR #91 tests are
-// intentionally not carried over.
+// Assertions describe THIS repo's parallel.ts. PR #91 is NOT a literal
+// duplicate: its test set asserts four features we now ship too —
+// placeholder-key detection (global in config.ts), query expansion,
+// inlineContent, and a MIN_USEFUL_CONTENT extract gate — so those behaviors
+// are now covered HERE rather than carried over from PR #91.
 
 const parallelModuleUrl = new URL("../providers/parallel.ts", import.meta.url).href;
 
@@ -291,12 +294,25 @@ console.log(JSON.stringify({
 		assert.equal(parsed.results[0].snippet, "First excerpt. Second excerpt.");
 		assert.equal(parsed.results[1].snippet, "Other content here.");
 
-		// Our parallel.ts does NOT return inlineContent (that's a PR #91 feature).
-		assert.equal(parsed.inlineContent, undefined);
+		// Per-source excerpt content surfaced as structured inline content.
+		assert.ok(Array.isArray(parsed.inlineContent), "inlineContent should be populated");
+		assert.equal(parsed.inlineContent.length, 2);
+		assert.deepEqual(
+			parsed.inlineContent.map((c) => ({ url: c.url, title: c.title, content: c.content, error: c.error })),
+			[
+				{ url: "https://example.test/article", title: "Example Article", content: "First excerpt. Second excerpt.", error: null },
+				{ url: "https://example.test/other", title: "Other Page", content: "Other content here.", error: null },
+			],
+		);
 
 		// Request body shape.
 		assert.equal(parsed.callBody.objective, "parallel search query");
-		assert.deepEqual(parsed.callBody.search_queries, ["parallel search query"]);
+		// Query expansion: 3 content tokens -> full phrase + first/second halves.
+		assert.deepEqual(parsed.callBody.search_queries, [
+			"parallel search query",
+			"parallel search",
+			"search query",
+		]);
 		assert.equal(parsed.callBody.mode, "basic");
 		assert.equal(parsed.callBody.max_chars_total, 40000);
 		assert.equal(parsed.callBody.advanced_settings.max_results, 5);
@@ -598,5 +614,176 @@ console.log(JSON.stringify({ url: result?.url ?? null, title: result?.title ?? n
 		// Result is taken from the first (non-matching) entry, but url is the REQUESTED url.
 		assert.equal(parsed.url, extractTargetUrl);
 		assert.equal(parsed.title, "Fallback");
+	});
+});
+
+describe("buildSearchQueriesFromObjective", () => {
+	test("returns [] for blank / whitespace-only input", () => {
+		assert.deepEqual(buildSearchQueriesFromObjective(""), []);
+		assert.deepEqual(buildSearchQueriesFromObjective("   \t\n"), []);
+	});
+
+	test("returns a single query when only one content token remains", () => {
+		assert.deepEqual(buildSearchQueriesFromObjective("paralleloptimiser"), ["paralleloptimiser"]);
+	});
+
+	test("returns a single query when <= 2 content tokens remain", () => {
+		// Two content tokens ("search", "api") after stopwords removed.
+		assert.deepEqual(buildSearchQueriesFromObjective("the search api"), ["search api"]);
+	});
+
+	test("expands 3 content tokens into full + first/second-half queries", () => {
+		assert.deepEqual(buildSearchQueriesFromObjective("parallel search query"), [
+			"parallel search query",
+			"parallel search",
+			"search query",
+		]);
+	});
+
+	test("expands 4 content tokens into three diverse queries", () => {
+		assert.deepEqual(buildSearchQueriesFromObjective("parallel search api documentation"), [
+			"parallel search api documentation",
+			"parallel search",
+			"api documentation",
+		]);
+	});
+
+	test("strips common stopwords before expanding", () => {
+		// "how", "do", "i", "the" are stopwords; content tokens are 3.
+		assert.deepEqual(buildSearchQueriesFromObjective("How do I query the parallel API"), [
+			"query parallel api",
+			"query parallel",
+			"parallel api",
+		]);
+	});
+
+	test("falls back to raw tokens when every token is a stopword", () => {
+		// Raw tokens (3) still subdivide like any 3-token objective.
+		assert.deepEqual(buildSearchQueriesFromObjective("the and of"), [
+			"the and of",
+			"the and",
+			"and of",
+		]);
+	});
+
+	test("never returns more than 3 queries", () => {
+		const longObjective = "parallel web search api documentation examples tutorial guide";
+		const queries = buildSearchQueriesFromObjective(longObjective);
+		assert.ok(queries.length <= 3, `expected <= 3, got ${queries.length}`);
+		assert.ok(queries.length >= 1);
+		// All queries are distinct.
+		assert.equal(new Set(queries).size, queries.length);
+	});
+
+	test("normalizes case and punctuation", () => {
+		assert.deepEqual(
+			buildSearchQueriesFromObjective("Parallel, SEARCH! query?"),
+			["parallel search query", "parallel search", "search query"],
+		);
+	});
+});
+
+describe("searchWithParallel inlineContent", () => {
+	test("omits inlineContent entirely when no results carry excerpt content", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
+		const response = {
+			results: [
+				{ url: "https://example.test/a", title: "A", excerpts: [] },
+				{ url: "https://example.test/b", title: "B", excerpts: ["   "] },
+			],
+		};
+		const child = runSearch(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response }])}
+const result = await searchWithParallel("parallel search query");
+console.log(JSON.stringify({ inlineContent: result.inlineContent ?? null, resultsLen: result.results.length }));
+`);
+		assertChildSuccess(child);
+		const parsed = JSON.parse(child.stdout.trim());
+		assert.equal(parsed.inlineContent, null);
+		assert.equal(parsed.resultsLen, 2);
+	});
+
+	test("drops URL-less results from inlineContent but keeps content-bearing ones", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
+		const response = {
+			results: [
+				{ url: "https://example.test/has", title: "Has", excerpts: ["real content"] },
+				{ url: "", title: "NoURL", excerpts: ["dropped"] },
+				{ url: "https://example.test/empty", title: "Empty", excerpts: [] },
+			],
+		};
+		const child = runSearch(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response }])}
+const result = await searchWithParallel("parallel search query");
+console.log(JSON.stringify({ inlineContent: result.inlineContent ?? null }));
+`);
+		assertChildSuccess(child);
+		const parsed = JSON.parse(child.stdout.trim());
+		assert.deepEqual(
+			parsed.inlineContent.map((c) => ({ url: c.url, content: c.content, error: c.error })),
+			[{ url: "https://example.test/has", content: "real content", error: null }],
+		);
+	});
+
+	test("uses empty title string when a result has no title", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
+		const response = { results: [{ url: "https://example.test/x", excerpts: ["content here"] }] };
+		const child = runSearch(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response }])}
+const result = await searchWithParallel("parallel search query");
+console.log(JSON.stringify({ title: result.inlineContent?.[0]?.title ?? null }));
+`);
+		assertChildSuccess(child);
+		assert.equal(JSON.parse(child.stdout.trim()).title, "");
+	});
+});
+
+describe("extractWithParallel MIN_USEFUL_CONTENT gate", () => {
+	test("returns null for content shorter than the useful threshold", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
+		// 50 chars < 100 threshold -> junk, fall through.
+		const short = "x".repeat(50);
+		const extractResponse = { results: [{ url: extractTargetUrl, full_content: short }] };
+		const child = runExtract(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/extract", response: extractResponse }])}
+const result = await extractWithParallel(${JSON.stringify(extractTargetUrl)});
+console.log(JSON.stringify({ result }));
+`);
+		assertChildSuccess(child);
+		assert.equal(JSON.parse(child.stdout.trim()).result, null);
+	});
+
+	test("keeps content at or above the useful threshold", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
+		// Exactly 100 chars == threshold -> kept (gate is length < MIN).
+		const ok = "y".repeat(100);
+		const extractResponse = { results: [{ url: extractTargetUrl, full_content: ok, title: "OK" }] };
+		const child = runExtract(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/extract", response: extractResponse }])}
+const result = await extractWithParallel(${JSON.stringify(extractTargetUrl)});
+console.log(JSON.stringify({ content: result?.content ?? null, contentLen: result?.content?.length ?? 0 }));
+`);
+		assertChildSuccess(child);
+		const parsed = JSON.parse(child.stdout.trim());
+		assert.equal(parsed.contentLen, 100);
+		assert.equal(parsed.content, ok);
+	});
+
+	test("rejects short joined excerpts too, not just full_content", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
+		const extractResponse = { results: [{ url: extractTargetUrl, excerpts: ["tiny"] }] };
+		const child = runExtract(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/extract", response: extractResponse }])}
+const result = await extractWithParallel(${JSON.stringify(extractTargetUrl)}, undefined, { prompt: "anything" });
+console.log(JSON.stringify({ result }));
+`);
+		assertChildSuccess(child);
+		assert.equal(JSON.parse(child.stdout.trim()).result, null);
 	});
 });
