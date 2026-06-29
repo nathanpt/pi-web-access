@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Parallel provider quality parity.** Three tightly-related improvements to `providers/parallel.ts`, closing the feature gaps surfaced by the PR #91 audit and tracked as the most concrete competitive-quality gap against the official `@parallel-web/pi-extension`:
+  - **Query expansion.** A natural-language objective is now turned into 2–3 concise, diverse keyword queries (`buildSearchQueriesFromObjective`) instead of a single echoed phrase — the Parallel `basic` search mode is documented to work best with 2–3 keyword queries. Stopwords are stripped, then the full keyword phrase plus first/second-half subsets are emitted for broader recall. The objective itself is still sent verbatim as the `objective` field.
+  - **`inlineContent`.** Per-result excerpt content is now surfaced as structured `inlineContent[]` (a peer to Exa/Gemini), so the consuming model sees per-source text rather than only the synthesized `answer`. The Parallel search API returns excerpts (not full page text — that's the extract endpoint's job), so each entry's content is its joined excerpts; content-less and URL-less entries are dropped.
+  - **`MIN_USEFUL_CONTENT` extract gate.** `extractWithParallel` now rejects extracts shorter than 100 characters (cookie banners, nav stubs, error pages) and returns `null` so the `fetch_content` fallback chain advances to the next provider instead of polluting it with junk.
+
 ## [0.15.0] - 2026-06-28
 
 ### Changed
