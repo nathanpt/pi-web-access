@@ -14,6 +14,11 @@ export interface QueryResultData {
 	/** Provider routing trace (ROADMAP item #3). Present when the result came
 	 * from a live `search()` call; undefined for legacy/stored entries. */
 	trace?: SearchTrace;
+	/** Per-source raw content carried alongside `results` (matched by URL) so
+	 * the synthesis layer can reason from primary sources instead of only the
+	 * pre-filtered provider `answer`. Undefined for providers that don't return
+	 * inline content and for legacy/stored entries. In-memory only. */
+	inlineContent?: ExtractedContent[];
 }
 
 export interface StoredSearchData {

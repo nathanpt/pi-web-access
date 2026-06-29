@@ -1407,7 +1407,7 @@ export default function (pi: ExtensionAPI) {
 								signal: searchSignal,
 							});
 							if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
-							searchResults.set(qi, { query: queryList[qi], answer, results, error: null, provider, trace });
+							searchResults.set(qi, { query: queryList[qi], answer, results, error: null, provider, trace, inlineContent });
 							if (inlineContent) allInlineContent.push(...inlineContent);
 							if (curator) {
 								curator.pushResult(qi, {
@@ -1481,7 +1481,7 @@ export default function (pi: ExtensionAPI) {
 					});
 
 					return {
-						result: { query, answer, results, error: null, provider },
+						result: { query, answer, results, error: null, provider, inlineContent },
 						inlineContent,
 					};
 				} catch (err) {
