@@ -18,13 +18,24 @@ export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority"
 /**
  * Built-in order used by `provider: "auto"` and as the fallback when
  * `provider: "priority"` is selected but no `providerPriority` list is
- * configured. `parallel` is appended last: it is only tried when exa,
- * perplexity, and gemini are all unavailable or have failed, so a configured
- * Parallel key acts as a safety net without disrupting the existing routing
- * behavior. (Placeholder keys are already filtered by `normalizeApiKey`, so a
- * leftover `"your-key"` value won't 401 here — it falls through.)
+ * configured.
+ *
+ * POLICY (revised 2026-06-29): `auto` contains ONLY providers that work
+ * without a paid API key — exa (zero-config MCP) and gemini (API key,
+ * gateway, or browser-cookie Web). Every paid-key provider — perplexity,
+ * parallel, brave, tavily, openai, olostep — is OPT-IN: a configured key
+ * never silently routes queries into the auto chain (and so never silently
+ * bills). Reach them with `provider: "<name>"` or by listing them in
+ * `providerPriority` + `provider: "priority"`. searxng is opt-in too (its
+ * base-URL availability signal is weak intent — it may be set for another
+ * tool). Availability gating still skips any provider whose key/config is
+ * missing, so this list only differs from opt-in for users who actually hold
+ * a key; the point of opt-in is that holding a key is not the same as wanting
+ * it in the silent fallback. (Placeholder keys are already filtered by
+ * `normalizeApiKey`, so a leftover `"your-key"` value won't 401 here — it
+ * falls through.)
  */
-const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "perplexity", "gemini", "parallel"];
+const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "gemini"];
 
 const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "olostep", "brave", "tavily", "openai"]);
 export { ALL_PROVIDERS };

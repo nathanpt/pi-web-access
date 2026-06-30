@@ -94,35 +94,27 @@ console.log(JSON.stringify(res.trace));
 		assert.equal(trace.attempts[0].status, "success");
 	});
 
-	test("auto mode records skipped unavailable providers + the winner", async () => {
-		// Only Parallel is keyed. auto order is [exa, perplexity, gemini, parallel].
-		// Exa (MCP) is 'available' but mocked to 503 -> error attempt.
-		// Perplexity/gemini unkeyed -> skipped.
-		// Parallel wins.
+	test("auto mode records the winner + resolved order (opt-in providers absent)", async () => {
+		// Exa keyed + succeeds via its direct API -> auto winner. Under the
+		// "auto = no paid key" policy the order is [exa, gemini]; once exa wins
+		// the loop stops (gemini isn't attempted), and opt-in paid providers
+		// (perplexity, parallel, ...) are absent from attempts entirely.
 		const home = await createTempHome();
-		await writeWebSearchConfig(home, { parallelApiKey: "par-real-key" });
 		const child = runSearch(home, `
-${buildFetchMockScript([
-	{ urlMatch: "mcp.exa.ai/mcp", ok: false, status: 503, response: "exa down" },
-	{ urlMatch: "api.parallel.ai/v1/search", response: parallelOkResponse },
-])}
+${buildFetchMockScript([{ urlMatch: "api.exa.ai/answer", response: { answer: "Exa answer.", results: [] } }])}
 const { search } = await import(${JSON.stringify(searchModuleUrl)});
 const res = await search("query", { provider: "auto" });
 console.log(JSON.stringify(res.trace));
-`);
+`, { EXA_API_KEY: "exa-key" });
 		assertChildSuccess(child);
 		const trace = JSON.parse(child.stdout.trim());
 		assert.equal(trace.mode, "auto");
-		assert.equal(trace.selected, "parallel");
-		assert.deepEqual(trace.order, ["exa", "perplexity", "gemini", "parallel"]);
+		assert.equal(trace.selected, "exa");
+		assert.deepEqual(trace.order, ["exa", "gemini"]);
 		const byName = Object.fromEntries(trace.attempts.map((a) => [a.provider, a.status]));
-		assert.equal(byName.exa, "error", "exa MCP was called and failed");
-		assert.equal(byName.perplexity, "skipped");
-		assert.equal(byName.gemini, "skipped");
-		assert.equal(byName.parallel, "success");
-		// exa error attempt carries a detail
-		const exaAttempt = trace.attempts.find((a) => a.provider === "exa");
-		assert.ok(exaAttempt.detail && exaAttempt.detail.length > 0);
+		assert.equal(byName.exa, "success", "exa was called and won");
+		assert.equal(byName.perplexity, undefined, "perplexity is opt-in (not in auto order)");
+		assert.equal(byName.parallel, undefined, "parallel is opt-in (not in auto order)");
 	});
 
 	test("failure: trace is attached to the thrown error via getSearchTrace", async () => {
@@ -147,14 +139,12 @@ try {
 		const trace = JSON.parse(out.slice("TRACE:".length));
 		assert.equal(trace.mode, "auto");
 		assert.equal(trace.selected, null);
-		assert.deepEqual(trace.order, ["exa", "perplexity", "gemini", "parallel"]);
+		assert.deepEqual(trace.order, ["exa", "gemini"]);
 		const byName = Object.fromEntries(trace.attempts.map((a) => [a.provider, a.status]));
 		assert.equal(byName.exa, "error");
-		assert.equal(byName.perplexity, "skipped");
+		assert.equal(byName.perplexity, undefined, "perplexity is opt-in (not in auto order)");
 		assert.equal(byName.gemini, "skipped");
-		// parallel was never reached (exa errored, then loop continued but
-		// parallel is unkeyed -> skipped, not error)
-		assert.equal(byName.parallel, "skipped");
+		assert.equal(byName.parallel, undefined, "parallel is opt-in (not in auto order)");
 	});
 
 	test("explicit gemini no-result: trace records no-result attempt + throws", async () => {

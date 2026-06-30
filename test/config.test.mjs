@@ -202,7 +202,7 @@ test("normalizeApiKey treats placeholder values as missing (null)", () => {
 
 test("placeholder key makes a provider fall through (provenance = missing)", () => {
 	// A leftover "your-key" Parallel value should NOT count as configured —
-	// this is the core fix that lets parallel join the auto order safely.
+	// placeholder keys are treated as missing for EVERY provider.
 	const status = getProviderCredentialStatus(
 		{ parallelApiKey: "your-key" },
 		{},

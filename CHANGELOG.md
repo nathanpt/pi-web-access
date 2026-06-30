@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed (behavior)
+- **Paid-key search providers are now opt-in; `auto` is Exa → Gemini only.** `DEFAULT_AUTO_ORDER` was `[exa, perplexity, gemini, parallel]`; it is now `[exa, gemini]`. The old line between "auto" and "opt-in" was historical (Perplexity/Parallel were in `auto` only because they shipped early / Parallel got a one-off "safety-net" promotion), not a property of the providers — every paid-key provider is identical in kind. The new rule is principled and one line: **`auto` contains only providers that work without a paid key** (Exa via zero-config MCP; Gemini via API key, gateway, or browser cookies), so a configured paid key never silently routes queries or bills. Perplexity, Parallel, Brave, Tavily, and OpenAI are all opt-in, alongside SearXNG and Olostep. **Migration:** if you relied on a Perplexity or Parallel key participating in the silent `auto` fallback, add it to `providerPriority` (e.g. `["perplexity", "exa", "gemini"]`) and select `provider: "priority"` to keep it in the chain. No capability is lost — every provider remains reachable; only the default try-order shrunk. (Availability gating already skipped unconfigured providers, so this only affects users who actually held a key for a now-opt-in provider.)
+
 ## [0.16.0] - 2026-06-29
 
 **Answer quality.** Two related halves: Parallel search returns richer, better-targeted results, and the summary synthesis layer now reasons from primary source content instead of only a provider's pre-filtered answer. PR #42's `inlineContent` is literally the enabler for the synthesis change — together they form one coherent theme rather than two unrelated slices.

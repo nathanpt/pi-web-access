@@ -327,26 +327,30 @@ try {
 		assert.match(out, /Exa:/);
 	});
 
-	// ---- ROADMAP item #2: parallel is now part of the default auto order ----
+	// ---- POLICY (2026-06-29): paid-key providers are OPT-IN, including parallel ----
 
-	test("auto order now includes parallel as the last fallback", async () => {
-		// Only Parallel is keyed; exa (MCP) is mocked to fail, perplexity/gemini
-		// unkeyed+skipped. auto must reach parallel and return it.
+	test("auto order does NOT include parallel (opt-in) — keyed parallel is never tried in auto", async () => {
+		// Only Parallel is keyed; exa (MCP) mocked to fail, gemini unkeyed.
+		// auto = [exa, gemini] (parallel is opt-in), so search throws WITHOUT
+		// ever contacting parallel — a configured Parallel key must not silently
+		// route queries into the auto chain.
 		const home = await createTempHome();
 		await writeWebSearchConfig(home, { parallelApiKey: "parallel-real-key" });
 		const child = runSearch(home, `
 ${buildFetchMockScript([
 	{ urlMatch: "mcp.exa.ai/mcp", ok: false, status: 503, response: "exa down" },
-	{ urlMatch: "api.parallel.ai/v1/search", response: { answer: "Parallel saved the day.", results: [{ title: "P", url: "https://p.example", snippet: "" }] } },
 ])}
-const res = await search("query", { provider: "auto" });
+const outcome = await (async () => {
+	try { await search("query", { provider: "auto" }); return { threw: false }; }
+	catch { return { threw: true }; }
+})();
 const parallelCalls = globalThis.__getCalls().filter((c) => c.url.includes("api.parallel.ai")).length;
-console.log(JSON.stringify({ provider: res.provider, parallelCalls }));
+console.log(JSON.stringify({ threw: outcome.threw, parallelCalls }));
 `);
 		assertChildSuccess(child);
 		const parsed = JSON.parse(child.stdout.trim());
-		assert.equal(parsed.provider, "parallel");
-		assert.ok(parsed.parallelCalls > 0, "parallel was never tried");
+		assert.equal(parsed.threw, true, "auto with only parallel keyed must throw (parallel is opt-in)");
+		assert.equal(parsed.parallelCalls, 0, "parallel must not be contacted in auto mode");
 	});
 
 	test("placeholder PARALLEL_API_KEY does not select parallel (falls through)", async () => {
