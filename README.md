@@ -11,12 +11,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows*-blue?style=for-the-badge)]()
 
-> ⚠️ **Maintained fork.** This is an actively maintained fork of
-> [`nicobailon/pi-web-access`](https://github.com/nicobailon/pi-web-access). The
-> upstream project is **no longer maintained** (30+ open PRs unactioned since
-> **5/4/26**). `upstream` stays pointed at the original and its outstanding PRs are
-> being merged into this fork. **Not published to npm** — install it from GitHub
-> with `pi install git:github.com/nathanpt/pi-web-access`. See
+> 🍴 **Opinionated fork.** This is an actively maintained fork of
+> [`nicobailon/pi-web-access`](https://github.com/nicobailon/pi-web-access).
+> Upstream revived in late June 2026 (v0.11.0–v0.13.0) and now shares most of the
+> feature surface. This fork adds the **`/webaccess` config command**,
+> **`providerPriority` custom routing**, two extra opt-in providers (**SearXNG**,
+> **Olostep**), and a retained **`code_search`** tool on top of that shared core —
+> see [Differences from upstream](#differences-from-upstream). **Not published to
+> npm** — install it from GitHub with
+> `pi install git:github.com/nathanpt/pi-web-access`. See
 > [Maintenance & Fork Status](#maintenance--fork-status) below.
 
 <!-- https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f -->
@@ -53,9 +56,8 @@ See [Tools](#tools), [Capabilities](#capabilities), and [Configuration](#configu
 
 ## Install
 
-This fork is **not published to npm** — the `pi-web-access` package on npm is the
-original, now-unmaintained upstream version. Install this fork directly from
-GitHub:
+This fork is **not published to npm** — the `pi-web-access` package on npm is
+upstream's version. Install this fork directly from GitHub:
 
 ```bash
 pi install git:github.com/nathanpt/pi-web-access
@@ -152,31 +154,41 @@ A few worth knowing up front — full detail in [Configuration](docs/configurati
 ## Maintenance & Fork Status
 
 This repository is an **actively maintained fork** of
-[`nicobailon/pi-web-access`](https://github.com/nicobailon/pi-web-access). The
-upstream project is no longer maintained — **30+ open pull requests have gone
-unactioned since 5/4/26**.
+[`nicobailon/pi-web-access`](https://github.com/nicobailon/pi-web-access).
+
+Upstream went quiet after early May 2026, which is why this fork began. **It has
+since revived**: in late June 2026 the upstream maintainer shipped v0.11.0 →
+v0.12.0 → v0.13.0 and merged 15+ community PRs, independently landing most of the
+features this fork had built on its own (Parallel/Tavily/Brave/OpenAI providers,
+XDG config, headless `auto-summary`, `ssrf.allowRanges`, billing-safety, the
+Cloudflare AI Gateway, Ctrl+O error diagnostics, and the pi 0.80 migration). The
+two trees now share most of their feature surface.
+
+So why does the fork still exist? A handful of things are **not** upstream and are
+the fork's reason to keep going — the `/webaccess` command, `providerPriority`
+routing, SearXNG and Olostep providers, and a retained `code_search` tool. See
+[Differences from upstream](#differences-from-upstream) for the full list.
 
 **How this fork is run:**
 
 - **`upstream` → original repo** (`nicobailon/pi-web-access`). The `upstream` git
-  remote stays pointed at the original so its history and outstanding PRs can be
-  pulled in.
-- **PRs are being merged here.** The open PRs from upstream are being reviewed and
-  pulled into this fork incrementally.
+  remote tracks the original so its history and new work can be pulled in.
+- **Track and port upstream.** Upstream's flat layout means its commits don't
+  cherry-pick cleanly onto our `providers/` / `extractors/` / `curator/` structure,
+  so new upstream work is ported here as manual re-implementations with credit to
+  the original author.
 - **Not on npm (for now).** Do **not** install via `pi install npm:pi-web-access` —
-  that pulls the original, unmaintained version. Install this fork from GitHub
-  instead:
+  that pulls upstream's version. Install this fork from GitHub instead:
 
   ```bash
   pi install git:github.com/nathanpt/pi-web-access
   ```
 
-Contributions (fixes, features, cherry-picked upstream PRs) are welcome as PRs
+Contributions (fixes, features, ports of upstream work) are welcome as PRs
 against **this fork**. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the
-development setup, test conventions, the cherry-pick-with-attribution workflow,
-and how outstanding upstream PRs are being merged here. Contributors are listed
-in **[CONTRIBUTORS.md](CONTRIBUTORS.md)**. When referencing
-upstream commits or PRs, please cite the original author's work.
+development setup, test conventions, and the cherry-pick-with-attribution
+workflow. Contributors are listed in **[CONTRIBUTORS.md](CONTRIBUTORS.md)**. When
+referencing upstream commits or PRs, please cite the original author's work.
 
 <details>
 <summary>Files</summary>
@@ -223,12 +235,24 @@ upstream commits or PRs, please cite the original author's work.
 
 ## Differences from upstream
 
-This fork tracks upstream and merges its PRs incrementally (see [Maintenance & Fork Status](#maintenance--fork-status)), but a few divergences are **intentional and permanent** — they won't be reconciled by a future upstream merge:
+Upstream revived in late June 2026 (v0.11.0–v0.13.0) and now independently ships much of what this fork had built — Parallel, Tavily, Brave, and OpenAI providers; XDG config; headless `auto-summary`; `ssrf.allowRanges`; billing-safety via `enabledModels`; the Cloudflare AI Gateway; Ctrl+O error diagnostics; and the pi 0.80 `@earendil-works/*` migration. The differences below are what genuinely remain.
+
+### Fork-only additions (not upstream)
+
+- **`/webaccess` command.** A config UX for inspecting status and setting / clearing / dry-run testing provider keys, plus `doctor` diagnostics — no JSON or env-var editing. Upstream relies on hand-editing `~/.pi/web-search.json` and env vars.
+- **`providerPriority` routing.** Set a custom provider try-order (e.g. `["perplexity", "exa", "gemini"]`) and select it with `provider: "priority"`. Upstream exposes only the built-in `auto` order.
+- **SearXNG** (self-hosted metasearch, base-URL, no key) and **Olostep** (answers API + a `fetch_content` scrape fallback). Two extra opt-in providers upstream doesn't carry.
+
+### Intentional, permanent divergences
 
 - **`code_search` is retained.** Upstream removed it (`7ae547d`), citing overlap with `web_search`. We keep it: `code_search` calls Exa's distinct `get_code_context_exa` code index with token-budgeting and query tuning that `web_search` lacks. Recorded as a permanent divergence in the `0.11.0` changelog.
 - **The Exa local usage cap is retained.** Upstream removed it (`2e1f454`); we keep our own budget logic (and `parallel.ts`'s), so local usage stays bounded.
 - **Our own `parallel.ts`.** Upstream's Parallel integration (`d689aea`) is a different implementation; ours ships its own feature set and budget logic, so the two are not interchangeable.
-- **Folder restructure + centralized config.** Source lives under `providers/`, `extractors/`, and `curator/` with a single `config.ts` owning `~/.pi/web-search.json` (no per-provider `loadConfig()` clones). Upstream is a flat layout. This is why upstream PRs are ported here as manual re-implementations rather than cherry-picked.
-- **Namespace: now aligned.** Both this fork and upstream import from `@earendil-works/*` (upstream migrated in `da524f7`; we did the same in `0.15.0`), so this is no longer a divergence.
 
-Everything else — additional providers (Parallel, SearXNG, Olostep, Brave, Tavily, OpenAI), the `/webaccess` config command, provider-priority routing, Provider Trace, headless `auto-summary`, and the hardened redirect-aware SSRF guard — is **additive** and recorded in the [CHANGELOG](CHANGELOG.md).
+### Architectural (drives how upstream work is ported)
+
+- **Folder restructure + centralized config.** Source lives under `providers/`, `extractors/`, and `curator/` with a single `config.ts` owning `~/.pi/web-search.json` (no per-provider `loadConfig()` clones). Upstream stays a flat layout. This is why upstream commits are ported here as manual re-implementations rather than cherry-picked.
+
+### Reconciled (no longer a divergence)
+
+- **Namespace.** Both fork and upstream import from `@earendil-works/*` (upstream migrated in `da524f7`; we followed in `0.15.0`).

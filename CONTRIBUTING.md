@@ -1,11 +1,14 @@
 # Contributing to pi-web-access
 
 First: **thank you**. This is an actively maintained fork of
-[`nicobailon/pi-web-access`](https://github.com/nicobailon/pi-web-access),
-whose upstream is no longer maintained. **Contributions belong here, not
-upstream** — upstream PRs go unactioned, while this fork has green CI and is
-actively merging the best of those outstanding PRs. See the README's
-[Maintenance & Fork Status](README.md#maintenance--fork-status) section for the
+[`nicobailon/pi-web-access`](https://github.com/nicobailon/pi-web-access).
+Upstream revived in late June 2026 and now shares most of the feature surface;
+this fork continues for its own additions — the `/webaccess` command,
+`providerPriority` routing, the SearXNG and Olostep providers, and a retained
+`code_search` tool. **Contributions belong here**, against this fork, which has
+green CI and an active maintainer. See the README's
+[Maintenance & Fork Status](README.md#maintenance--fork-status) and
+[Differences from upstream](README.md#differences-from-upstream) sections for the
 full background.
 
 This document covers **how** to contribute. It mirrors the workflow this fork
@@ -58,8 +61,8 @@ each run):
 pi -e .
 ```
 
-> **Do not** install via `pi install npm:pi-web-access` — that pulls the
-> original, unmaintained upstream package. This fork is not (yet) on npm.
+> **Do not** install via `pi install npm:pi-web-access` — that pulls upstream's
+> package. This fork is not (yet) on npm.
 
 ### No build step
 
