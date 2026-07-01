@@ -18,6 +18,8 @@ import {
 	getAllCredentialSources,
 	isPlaceholderKey,
 	loadWebSearchConfig,
+	normalizeApiKey,
+	normalizeBaseUrl,
 } from "./config.js";
 // Derive the concrete provider list from the single source of truth so the
 // `/webaccess` validators never drift from the SearchProvider union as
@@ -88,6 +90,39 @@ export function validateSearchModel(value: string): ValidationResult {
 	return { ok: true, value: normalized };
 }
 
+/** Validate a clearable model-id field for gateway routing (`''`/`none`/`clear`
+ * → clear, i.e. restore the provider default). Otherwise a non-empty string
+ * with no whitespace (gateway model ids may contain `/`, e.g. `provider/model`). */
+export function validateClearableModel(value: string, field: string): ValidationResult {
+	const normalized = value.trim();
+	if (!normalized || normalized.toLowerCase() === "none" || normalized.toLowerCase() === "clear") {
+		return { ok: true, value: undefined };
+	}
+	if (/\s/.test(normalized)) return { ok: false, error: `${field} must not contain whitespace (got "${value}")` };
+	return { ok: true, value: normalized };
+}
+
+/** Validate a clearable base-URL field for gateway routing. `''`/`none`/`clear`
+ * → clear (restore the provider's default endpoint). Otherwise an http(s) URL;
+ * any path segment is kept (e.g. `/v1`) and trailing slashes are stripped —
+ * the provider appends its own path (`/responses`, `/chat/completions`). */
+export function validateBaseUrl(value: string, field: string): ValidationResult {
+	const normalized = value.trim();
+	if (!normalized || normalized.toLowerCase() === "none" || normalized.toLowerCase() === "clear") {
+		return { ok: true, value: undefined };
+	}
+	if (/\s/.test(normalized)) return { ok: false, error: `${field} must not contain whitespace (got "${value}")` };
+	try {
+		const url = new URL(normalized);
+		if (url.protocol !== "http:" && url.protocol !== "https:") {
+			return { ok: false, error: `${field} must be an http(s) URL (got "${value}")` };
+		}
+	} catch {
+		return { ok: false, error: `${field} must be a valid URL (got "${value}")` };
+	}
+	return { ok: true, value: normalized.replace(/\/+$/, "") };
+}
+
 /** Validate an API key value for `/webaccess set-key <provider> <key>`. */
 export function validateApiKey(value: string): ValidationResult {
 	const normalized = value.trim();
@@ -141,6 +176,10 @@ export const SET_FIELDS = [
 	"curator-timeout",
 	"ssrf-trust-env-proxy",
 	"ssrf-allow-ranges",
+	"openai-base-url",
+	"openai-search-model",
+	"perplexity-base-url",
+	"perplexity-model",
 ] as const;
 export type SetField = (typeof SET_FIELDS)[number];
 
@@ -159,6 +198,15 @@ function provenanceLabel(p: "env" | "config" | "missing"): string {
 
 function boolLabel(b: boolean): string {
 	return b ? "on" : "off";
+}
+
+/** Render one gateway-override summary line. Shows the effective value with its
+ * provenance, or `_(default)_` when unset (the provider default lives in the
+ * provider file — not hardcoded here, matching the `search model` pattern). */
+function gatewayOverrideLine(label: string, envValue: string | null, configValue: string | null): string {
+	if (envValue) return `- ${label}: \`${envValue}\` _(env)_`;
+	if (configValue) return `- ${label}: \`${configValue}\` _(config)_`;
+	return `- ${label}: _(default)_`;
 }
 
 /**
@@ -204,6 +252,13 @@ export function formatWebAccessSummary(): string {
 		lines.push(...hintLines);
 	}
 	lines.push("");
+	lines.push("**Endpoint overrides** _(gateway routing — OpenAI-compatible)_");
+	const gwCfg = loadWebSearchConfig();
+	lines.push(gatewayOverrideLine("openai base url", normalizeBaseUrl(process.env.OPENAI_BASE_URL), normalizeBaseUrl(gwCfg.openaiBaseUrl)));
+	lines.push(gatewayOverrideLine("openai model", normalizeApiKey(process.env.OPENAI_SEARCH_MODEL), normalizeApiKey(gwCfg.openaiSearchModel)));
+	lines.push(gatewayOverrideLine("perplexity base url", normalizeBaseUrl(process.env.PERPLEXITY_BASE_URL), normalizeBaseUrl(gwCfg.perplexityBaseUrl)));
+	lines.push(gatewayOverrideLine("perplexity model", normalizeApiKey(process.env.PERPLEXITY_MODEL), normalizeApiKey(gwCfg.perplexityModel)));
+	lines.push("");
 	lines.push("**Browser cookies**");
 	lines.push(`- allow browser cookies: ${boolLabel(eff.allowBrowserCookies)} _(${provenanceLabel(eff.browserCookieProvenance)})_`);
 	if (eff.chromeProfile) lines.push(`- chrome profile: \`${eff.chromeProfile}\``);
@@ -213,7 +268,7 @@ export function formatWebAccessSummary(): string {
 	lines.push(`- allow ranges: ${eff.ssrf.allowRanges.length ? eff.ssrf.allowRanges.map((r) => `\`${r}\``).join(", ") : "_(none)_"}`);
 	lines.push("");
 	lines.push("_Use `/webaccess <field> <value>` to change a setting. Fields: " +
-		"provider, workflow, provider-priority, allow-browser-cookies, search-model, curator-timeout, ssrf-trust-env-proxy, ssrf-allow-ranges. " +
+		"provider, workflow, provider-priority, allow-browser-cookies, search-model, curator-timeout, ssrf-trust-env-proxy, ssrf-allow-ranges, openai-base-url, openai-search-model, perplexity-base-url, perplexity-model. " +
 		"Set an API key with `/webaccess set-key <provider> <key>`._");
 
 	return lines.join("\n");
@@ -250,6 +305,12 @@ export function formatWebAccessHelp(): string {
 	lines.push("/webaccess allow-curator <on|off>                                # off = headless-only (summary-review -> none)");
 	lines.push("/webaccess search-model <model-id>                              # '' to clear");
 	lines.push("/webaccess curator-timeout <1-600>                              # seconds");
+	lines.push("");
+	lines.push("# endpoint overrides (gateway routing — OpenAI-compatible)");
+	lines.push("/webaccess openai-base-url <url>                             # '' or 'none' to clear. e.g. https://my-gateway.example.com/v1");
+	lines.push("/webaccess openai-search-model <model-id>                    # gateway model id (e.g. azure/openai/gpt-5.5)");
+	lines.push("/webaccess perplexity-base-url <url>                         # '' or 'none' to clear");
+	lines.push("/webaccess perplexity-model <model-id>                       # gateway model id");
 	lines.push("");
 	lines.push("# ssrf guard");
 	lines.push("/webaccess ssrf-trust-env-proxy <on|off>                         # skip DNS preflight for proxied hosts (sandbox/proxy egress)");
@@ -544,6 +605,22 @@ export function handleWebAccessCommand(args: string): WebAccessResult {
 		case "ssrf-allow-ranges":
 			result = validateAllowRanges(rawValue);
 			configUpdate = result.ok ? { ssrf: { ...current.ssrf, allowRanges: result.value } } : {};
+			break;
+		case "openai-base-url":
+			result = validateBaseUrl(rawValue, field);
+			configUpdate = result.ok ? { openaiBaseUrl: result.value } : {};
+			break;
+		case "openai-search-model":
+			result = validateClearableModel(rawValue, field);
+			configUpdate = result.ok ? { openaiSearchModel: result.value } : {};
+			break;
+		case "perplexity-base-url":
+			result = validateBaseUrl(rawValue, field);
+			configUpdate = result.ok ? { perplexityBaseUrl: result.value } : {};
+			break;
+		case "perplexity-model":
+			result = validateClearableModel(rawValue, field);
+			configUpdate = result.ok ? { perplexityModel: result.value } : {};
 			break;
 	}
 

@@ -40,6 +40,8 @@ const {
 	validateCuratorTimeout,
 	validateAllowRanges,
 	validateApiKey,
+	validateBaseUrl,
+	validateClearableModel,
 	handleWebAccessCommand,
 	formatWebAccessSummary,
 	formatWebAccessHelp,
@@ -307,7 +309,84 @@ test("unknown field returns help, does not write", () => {
 test("SET_FIELDS covers all documented set targets", () => {
 	assert.deepEqual([...SET_FIELDS], [
 		"provider", "workflow", "provider-priority", "allow-curator", "allow-browser-cookies", "search-model", "curator-timeout", "ssrf-trust-env-proxy", "ssrf-allow-ranges",
+		"openai-base-url", "openai-search-model", "perplexity-base-url", "perplexity-model",
 	]);
+});
+
+// ---- gateway routing: base-url + model overrides (ports upstream #113) ----
+
+test("validateBaseUrl accepts http(s) URLs (keeps path, strips trailing slash)", () => {
+	assert.equal(validateBaseUrl("https://gw.example.com/v1", "openai-base-url").ok, true);
+	assert.equal(validateBaseUrl("https://gw.example.com/v1", "openai-base-url").value, "https://gw.example.com/v1");
+	// trailing slashes stripped, path kept
+	assert.equal(validateBaseUrl("https://gw.example.com/v1///", "openai-base-url").value, "https://gw.example.com/v1");
+	// whitespace trimmed
+	assert.equal(validateBaseUrl("  https://gw.example.com  ", "openai-base-url").value, "https://gw.example.com");
+});
+
+test("validateBaseUrl clears on empty/none/clear", () => {
+	for (const v of ["", "  ", "none", "NONE", "clear"]) {
+		const r = validateBaseUrl(v, "openai-base-url");
+		assert.equal(r.ok, true, `${JSON.stringify(v)} should clear`);
+		assert.equal(r.value, undefined, `${JSON.stringify(v)} should clear to undefined`);
+	}
+});
+
+test("validateBaseUrl rejects non-url + non-http(s) + whitespace", () => {
+	// space-free invalid URL → hits the URL-validity check
+	assert.equal(validateBaseUrl("notaurlobviously", "openai-base-url").ok, false);
+	assert.match(validateBaseUrl("notaurlobviously", "openai-base-url").error ?? '', /valid URL/);
+	assert.equal(validateBaseUrl("file:///etc/passwd", "openai-base-url").ok, false);
+	assert.match(validateBaseUrl("file:///etc/passwd", "openai-base-url").error ?? '', /http/);
+	assert.equal(validateBaseUrl("https://example.com/x y", "openai-base-url").ok, false);
+});
+
+test("validateClearableModel accepts ids (incl. slashes) + clears", () => {
+	assert.equal(validateClearableModel("gpt-5.4", "openai-search-model").value, "gpt-5.4");
+	// gateway model ids with provider/model form
+	assert.equal(validateClearableModel("azure/openai/gpt-5.5", "openai-search-model").value, "azure/openai/gpt-5.5");
+	for (const v of ["", "  ", "none", "clear"]) {
+		assert.equal(validateClearableModel(v, "openai-search-model").value, undefined, `${JSON.stringify(v)} should clear`);
+	}
+	assert.equal(validateClearableModel("has space", "openai-search-model").ok, false);
+});
+
+test("openai-base-url set/clear writes the right config key", () => {
+	const home = isolate();
+	try {
+		let r = handleWebAccessCommand("openai-base-url https://gw.example.com/v1");
+		assert.equal(r.wrote, true);
+		assert.equal(readConfig(home).openaiBaseUrl, "https://gw.example.com/v1");
+		// clear removes it
+		r = handleWebAccessCommand("openai-base-url none");
+		assert.equal(r.wrote, true);
+		assert.equal(readConfig(home).openaiBaseUrl, undefined);
+	} finally { cleanup(home); }
+});
+
+test("perplexity-model + perplexity-base-url set round-trip through config", () => {
+	const home = isolate();
+	try {
+		let r = handleWebAccessCommand("perplexity-model perplexity/sonar-pro");
+		assert.equal(r.wrote, true);
+		assert.equal(readConfig(home).perplexityModel, "perplexity/sonar-pro");
+		r = handleWebAccessCommand("perplexity-base-url https://gw.example.com");
+		assert.equal(readConfig(home).perplexityBaseUrl, "https://gw.example.com");
+	} finally { cleanup(home); }
+});
+
+test("formatWebAccessSummary includes the Endpoint overrides section", () => {
+	const home = isolate();
+	try {
+		let text = formatWebAccessSummary();
+		assert.match(text, /\*\*Endpoint overrides\*\*/);
+		assert.match(text, /openai base url: _\(default\)_/);
+		assert.match(text, /perplexity model: _\(default\)_/);
+		// set an override → surfaces with its value
+		handleWebAccessCommand("openai-base-url https://gw.example.com/v1");
+		text = formatWebAccessSummary();
+		assert.match(text, /openai base url: `https:\/\/gw.example.com\/v1` _\(config\)_/);
+	} finally { cleanup(home); }
 });
 
 test("formatWebAccessSummary never leaks secrets even with all keys set", () => {

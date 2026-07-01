@@ -14,6 +14,8 @@ const openaiModuleUrl = new URL("../providers/openai-search.ts", import.meta.url
 function runChild(script, env) {
 	const childEnv = { ...process.env };
 	delete childEnv.OPENAI_API_KEY;
+	delete childEnv.OPENAI_BASE_URL;
+	delete childEnv.OPENAI_SEARCH_MODEL;
 	delete childEnv.PI_CODING_AGENT_DIR;
 	delete childEnv.XDG_CONFIG_HOME;
 	for (const [key, value] of Object.entries(env)) {

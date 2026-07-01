@@ -38,6 +38,11 @@ export interface RawWebSearchConfig {
 	braveApiKey?: unknown;
 	tavilyApiKey?: unknown;
 	openaiApiKey?: unknown;
+	// Gateway routing overrides (OpenAI-compatible gateways: LiteLLM, corporate proxies, ...)
+	openaiBaseUrl?: unknown;
+	openaiSearchModel?: unknown;
+	perplexityBaseUrl?: unknown;
+	perplexityModel?: unknown;
 	// Browser cookies
 	chromeProfile?: unknown;
 	allowBrowserCookies?: unknown;
@@ -158,6 +163,22 @@ export function normalizeApiKey(value: unknown): string | null {
 	if (normalized.length === 0) return null;
 	if (isPlaceholderKey(normalized)) return null;
 	return normalized;
+}
+
+/**
+ * Normalize a gateway-style base URL: trim whitespace, strip trailing
+ * slashes, reject empty/non-strings → `null`. Keeps any path segment (e.g.
+ * `/v1`, `/gemini`) — callers append their own path (`/responses`,
+ * `/chat/completions`, ...). This is the shared normalizer behind every
+ * `<PROVIDER>_BASE_URL` / `<provider>BaseUrl` override (Gemini, OpenAI,
+ * Perplexity). NOTE: `providers/searxng.ts` keeps its OWN stricter normalizer
+ * (bare http(s) host, path/query stripped — different semantics for SSRF
+ * safety) and intentionally does not use this.
+ */
+export function normalizeBaseUrl(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const normalized = value.trim().replace(/\/+$/, "");
+	return normalized.length > 0 ? normalized : null;
 }
 
 /**

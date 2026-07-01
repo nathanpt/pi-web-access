@@ -20,6 +20,10 @@ Inspect or update the extension's config without hand-editing `~/.pi/web-search.
 /webaccess allow-browser-cookies off
 /webaccess search-model gemini-2.5-flash                 # override the web_search model
 /webaccess curator-timeout 45                            # curator idle timeout (seconds, 1–600)
+/webaccess openai-base-url https://gw.example.com/v1      # route OpenAI Responses through a gateway ('' or 'none' to clear)
+/webaccess openai-search-model azure/openai/gpt-5.5       # gateway model id ('' or 'none' to clear)
+/webaccess perplexity-base-url https://gw.example.com     # route Perplexity through a gateway ('' or 'none' to clear)
+/webaccess perplexity-model sonar-pro                     # gateway model id ('' or 'none' to clear)
 /webaccess test-key parallel                             # dry-run a real search to confirm the configured key works
 /webaccess test-key parallel sk-candidate-1234           # test a candidate key without saving it
 /webaccess export                                        # print config as JSON (secrets redacted)

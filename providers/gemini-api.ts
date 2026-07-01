@@ -1,4 +1,4 @@
-import { loadWebSearchConfig, normalizeApiKey } from "../config.js";
+import { loadWebSearchConfig, normalizeApiKey, normalizeBaseUrl } from "../config.js";
 import { getWebSearchConfigPath } from "../utils.js";
 
 const DEFAULT_API_HOST = "https://generativelanguage.googleapis.com";
@@ -18,12 +18,6 @@ export const DEFAULT_MODEL = "gemini-3-flash-preview";
 
 export function getApiKey(): string | null {
 	return normalizeApiKey(process.env.GEMINI_API_KEY) ?? normalizeApiKey(loadWebSearchConfig().geminiApiKey);
-}
-
-function normalizeBaseUrl(value: unknown): string | null {
-	if (typeof value !== "string") return null;
-	const normalized = value.trim().replace(/\/+$/, "");
-	return normalized.length > 0 ? normalized : null;
 }
 
 /**

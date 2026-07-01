@@ -1,4 +1,4 @@
-import { loadWebSearchConfig, normalizeApiKey } from "../config.js";
+import { loadWebSearchConfig, normalizeApiKey, normalizeBaseUrl } from "../config.js";
 import { activityMonitor } from "../activity.js";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.js";
 
@@ -35,7 +35,12 @@ import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.j
 // Opt-in by design: NOT in `DEFAULT_AUTO_ORDER`. Reachable via explicit
 // `provider: "openai"` or a `providerPriority` listing.
 
-const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+// Public OpenAI Responses endpoint by default. Override via OPENAI_BASE_URL /
+// openaiBaseUrl to route through an OpenAI-compatible gateway (LiteLLM,
+// corporate proxies, ...) — mirrors GOOGLE_GEMINI_BASE_URL / geminiBaseUrl.
+// The configured value is a bare URL including any version segment and no
+// trailing slash (e.g. "https://my-gateway.example.com/v1"); we append /responses.
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const SEARCH_TIMEOUT_MS = 60_000;
 
 // Key path uses the public OpenAI API. (Codex endpoint + JWT detection deferred per D3.)
@@ -46,6 +51,34 @@ const DEFAULT_MODEL = "gpt-4.1-mini";
  * fall through (treated as missing) via the shared `normalizeApiKey`. */
 function getApiKey(): string | null {
 	return normalizeApiKey(process.env.OPENAI_API_KEY) ?? normalizeApiKey(loadWebSearchConfig().openaiApiKey);
+}
+
+/** Effective Responses-API base URL (no trailing slash). Override via
+ * `OPENAI_BASE_URL` (env) or `openaiBaseUrl` (config); defaults to the public
+ * OpenAI endpoint. Precedence: env > config > default. */
+function getOpenAIBaseUrl(): string {
+	return (
+		normalizeBaseUrl(process.env.OPENAI_BASE_URL) ??
+		normalizeBaseUrl(loadWebSearchConfig().openaiBaseUrl) ??
+		DEFAULT_OPENAI_BASE_URL
+	);
+}
+
+/** Full Responses-API URL (`<base>/responses`). */
+function getOpenAIResponsesUrl(): string {
+	return `${getOpenAIBaseUrl()}/responses`;
+}
+
+/** Effective model for the Responses `web_search` call. Override via
+ * `OPENAI_SEARCH_MODEL` (env) or `openaiSearchModel` (config) — needed when a
+ * gateway exposes non-OpenAI model IDs (e.g. `provider/model` forms). Defaults
+ * to `gpt-4.1-mini`. Placeholders fall through via `normalizeApiKey`. */
+function getOpenAISearchModel(): string {
+	return (
+		normalizeApiKey(process.env.OPENAI_SEARCH_MODEL) ??
+		normalizeApiKey(loadWebSearchConfig().openaiSearchModel) ??
+		DEFAULT_MODEL
+	);
 }
 
 function requestSignal(signal?: AbortSignal): AbortSignal {
@@ -299,7 +332,7 @@ export async function searchWithOpenAI(query: string, options: SearchOptions = {
 	};
 
 	const body = {
-		model: DEFAULT_MODEL,
+		model: getOpenAISearchModel(),
 		instructions: buildInstructions(options),
 		input: [{ role: "user", content: [{ type: "input_text", text: query }] }],
 		tools: [buildWebSearchTool(options)],
@@ -311,7 +344,7 @@ export async function searchWithOpenAI(query: string, options: SearchOptions = {
 	};
 
 	try {
-		const response = await fetch(OPENAI_RESPONSES_URL, {
+		const response = await fetch(getOpenAIResponsesUrl(), {
 			method: "POST",
 			headers,
 			body: JSON.stringify(body),
