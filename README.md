@@ -50,7 +50,7 @@
 | 🔑 **Key management** | `/webaccess set-key` / `clear-key` / `test-key` — add, remove, or dry-run provider keys; no JSON editing |
 | 🛡️ **Billing safety** | Summaries honor `enabledModels`; deterministic fallback when none is enabled |
 | 📁 **XDG config** | `PI_CODING_AGENT_DIR` → `XDG_CONFIG_HOME/pi` → `~/.pi` |
-| 🔌 **Bring your own gateway** | `GOOGLE_GEMINI_BASE_URL` + Cloudflare AI Gateway / LiteLLM / Helicone routing |
+| 🔌 **Bring your own gateway** | `GOOGLE_GEMINI_BASE_URL` / `OPENAI_BASE_URL` / `PERPLEXITY_BASE_URL` + Cloudflare AI Gateway / LiteLLM / Helicone / corporate-proxy routing |
 
 See [Tools](#tools), [Capabilities](#capabilities), and [Configuration](#configuration) for the full surface area. Built by [Nico Bailon](https://github.com/nicobailon) (original) and [Nathan Peet](https://github.com/nathanpt) (this fork) — see [Contributors](CONTRIBUTORS.md).
 
@@ -80,7 +80,7 @@ Works immediately with no API keys — Exa MCP provides zero-config search. For 
 /webaccess set-key openai sk-...
 ```
 
-Keys are validated and never echoed back (the confirmation shows only a last-4 fingerprint). SearXNG uses a base URL instead of a key (`/webaccess` shows its status; configure via `searxngBaseUrl` / `SEARXNG_BASE_URL`). You can also edit `~/.pi/web-search.json` directly, or set the env vars (`EXA_API_KEY`, `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, `PARALLEL_API_KEY`, `BRAVE_API_KEY`, `TAVILY_API_KEY`, `OLOSTEP_API_KEY`, `OPENAI_API_KEY`, `SEARXNG_BASE_URL`):
+Keys are validated and never echoed back (the confirmation shows only a last-4 fingerprint). SearXNG uses a base URL instead of a key (`/webaccess` shows its status; configure via `searxngBaseUrl` / `SEARXNG_BASE_URL`). You can also edit `~/.pi/web-search.json` directly, or set the env vars (`EXA_API_KEY`, `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, `PARALLEL_API_KEY`, `BRAVE_API_KEY`, `TAVILY_API_KEY`, `OLOSTEP_API_KEY`, `OPENAI_API_KEY`, `SEARXNG_BASE_URL`). Route the OpenAI / Perplexity providers through an OpenAI-compatible gateway with `OPENAI_BASE_URL` / `PERPLEXITY_BASE_URL` (plus `OPENAI_SEARCH_MODEL` / `PERPLEXITY_MODEL` for non-vendor model ids):
 
 ```json
 {
@@ -92,6 +92,8 @@ Keys are validated and never echoed back (the confirmation shows only a last-4 f
   "tavilyApiKey": "tvly-...",
   "olostepApiKey": "olostep-...",
   "openaiApiKey": "sk-...",
+  "openaiBaseUrl": "https://my-gateway.example.com/v1",
+  "perplexityBaseUrl": "https://my-gateway.example.com",
   "searxngBaseUrl": "https://search.example.com"
 }
 ```
