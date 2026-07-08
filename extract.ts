@@ -540,7 +540,7 @@ export async function extractContent(
 		...(firecrawlError ? [`Firecrawl fallback failed: ${firecrawlError}`] : []),
 		"",
 		"Fallback options:",
-		"  \u2022 Set FIRECRAWL_BASE_URL (self-hosted) in environment",
+		"  \u2022 Set FIRECRAWL_BASE_URL in ~/.pi/web-search.json",
 		"  \u2022 Set GEMINI_API_KEY in ~/.pi/web-search.json",
 		"  \u2022 Sign into gemini.google.com in Chrome",
 		"  \u2022 Use web_search to find content about this topic",
