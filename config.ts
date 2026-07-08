@@ -35,6 +35,8 @@ export interface RawWebSearchConfig {
 	cloudflareApiKey?: unknown;
 	olostepApiKey?: unknown;
 	searxngBaseUrl?: unknown;
+	firecrawlBaseUrl?: unknown;
+	firecrawlApiKey?: unknown;
 	braveApiKey?: unknown;
 	tavilyApiKey?: unknown;
 	openaiApiKey?: unknown;

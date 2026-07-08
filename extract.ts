@@ -10,6 +10,7 @@ import { isYouTubeURL, isYouTubeEnabled, extractYouTube, extractYouTubeFrame, ex
 import { extractWithUrlContext, extractWithGeminiWeb } from "./providers/gemini-url-context.js";
 import { extractWithParallel } from "./providers/parallel.js";
 import { extractWithOlostep } from "./providers/olostep.js";
+import { extractWithFirecrawl, isFirecrawlAvailable } from "./providers/firecrawl.js";
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./extractors/video-extract.js";
 import { fetchRemoteUrl, validateRemoteUrl, type Lookup } from "./ssrf-protection.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -501,6 +502,19 @@ export async function extractContent(
 	if (olostepResult) return olostepResult;
 	if (signal?.aborted) return abortedResult(url);
 
+	// Firecrawl extraction (self-hosted, Playwright-based, handles JS pages)
+	let firecrawlError: string | null = null;
+	try {
+		if (isFirecrawlAvailable()) {
+			const fcResult = await extractWithFirecrawl(url, signal);
+			if (fcResult) return fcResult;
+		}
+	} catch (err) {
+		if (isAbortError(err)) return abortedResult(url);
+		firecrawlError = errorMessage(err);
+	}
+	if (signal?.aborted) return abortedResult(url);
+
 	// Parallel Extract: server-side render + extract, handles JS-heavy pages and PDFs.
 	// Paid provider — placed after the free Jina Reader, before Gemini.
 	const parallelResult = await extractWithParallel(url, signal, options);
@@ -523,8 +537,10 @@ export async function extractContent(
 
 	const guidance = [
 		httpResult.error,
+		...(firecrawlError ? [`Firecrawl fallback failed: ${firecrawlError}`] : []),
 		"",
 		"Fallback options:",
+		"  \u2022 Set FIRECRAWL_BASE_URL (self-hosted) in environment",
 		"  \u2022 Set GEMINI_API_KEY in ~/.pi/web-search.json",
 		"  \u2022 Sign into gemini.google.com in Chrome",
 		"  \u2022 Use web_search to find content about this topic",

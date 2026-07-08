@@ -7,12 +7,13 @@ import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type Se
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
 import { isParallelAvailable, searchWithParallel } from "./parallel.js";
 import { isSearXNGAvailable, searchWithSearXNG } from "./searxng.js";
+import { isFirecrawlAvailable, searchWithFirecrawl } from "./firecrawl.js";
 import { isOlostepAvailable, searchWithOlostep } from "./olostep.js";
 import { isBraveAvailable, searchWithBrave } from "./brave.js";
 import { isTavilyAvailable, searchWithTavily } from "./tavily.js";
 import { isOpenAISearchAvailable, searchWithOpenAI } from "./openai-search.js";
 
-export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng" | "olostep" | "brave" | "tavily" | "openai";
+export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng" | "firecrawl" | "olostep" | "brave" | "tavily" | "openai";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority">;
 
 /**
@@ -37,7 +38,7 @@ export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority"
  */
 const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "gemini"];
 
-const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "olostep", "brave", "tavily", "openai"]);
+const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "firecrawl", "olostep", "brave", "tavily", "openai"]);
 export { ALL_PROVIDERS };
 
 const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
@@ -150,7 +151,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep" || normalized === "brave" || normalized === "tavily" || normalized === "openai"
+	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng" || normalized === "firecrawl" || normalized === "olostep" || normalized === "brave" || normalized === "tavily" || normalized === "openai"
 		? normalized
 		: "auto";
 }
@@ -255,6 +256,19 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		} catch (err) {
 			if (isAbortError(err)) throw err;
 			attempts.push({ provider: "searxng", status: "error", detail: errorMessage(err) });
+			attachSearchTrace(err, { ...trace, selected: null });
+			throw err;
+		}
+	}
+
+	if (provider === "firecrawl") {
+		try {
+			const result = await searchWithFirecrawl(query, options);
+			attempts.push({ provider: "firecrawl", status: "success" });
+			return { ...result, provider: "firecrawl", trace: { ...trace, selected: "firecrawl" } };
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			attempts.push({ provider: "firecrawl", status: "error", detail: errorMessage(err) });
 			attachSearchTrace(err, { ...trace, selected: null });
 			throw err;
 		}
