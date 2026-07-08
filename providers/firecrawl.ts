@@ -7,8 +7,9 @@ import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.j
 // `web_search` API (`/v1/search`) and a `fetch_content` scrape fallback
 // (`/v1/scrape` — Playwright-rendered Markdown). Config via
 // `firecrawlBaseUrl` / `FIRECRAWL_BASE_URL`, with optional Bearer token
-// auth (`firecrawlApiKey` / `FIRECRAWL_API_KEY`) or HTTP Basic Auth
-// (`FIRECRAWL_BASIC_AUTH`) for reverse-proxy setups.
+// auth (`firecrawlApiKey` / `FIRECRAWL_API_KEY`). Auto-detects format:
+// a value containing ":" is sent as HTTP Basic Auth (for reverse-proxy
+// setups); otherwise sent as a Bearer token.
 //
 // Self-hosted by design: requires a base URL to a running Firecrawl instance.
 // No third-party API key needed — runs fully offline when pointed at a local
@@ -105,21 +106,22 @@ function getApiKey(): string | null {
 	);
 }
 
-/** Build headers for Firecrawl API calls.
- *  Supports Bearer token (FIRECRAWL_API_KEY) or HTTP Basic Auth
- *  (FIRECRAWL_BASIC_AUTH) for reverse-proxy setups. */
+/** Build the Authorization header.
+ *  Single env var FIRECRAWL_API_KEY / config key firecrawlApiKey.
+ *  - Contains ":" → HTTP Basic Auth (base64-encoded, for Caddy/nginx basic_auth proxies)
+ *  - Otherwise   → Bearer token (standard for cloud Firecrawl)
+ *  Returns empty object when no key is set. */
 function buildHeaders(): Record<string, string> {
 	const headers: Record<string, string> = { "Content-Type": "application/json" };
 
-	const apiKey = getApiKey();
-	if (apiKey) {
-		headers["Authorization"] = `Bearer ${apiKey}`;
-		return headers;
-	}
+	const raw = getApiKey();
+	if (!raw) return headers;
 
-	const basicAuth = normalizeApiKey(process.env.FIRECRAWL_BASIC_AUTH);
-	if (basicAuth) {
-		headers["Authorization"] = `Basic ${Buffer.from(basicAuth).toString("base64")}`;
+	const colonIndex = raw.indexOf(":");
+	if (colonIndex > 0 && colonIndex < raw.length - 1) {
+		headers["Authorization"] = `Basic ${Buffer.from(raw).toString("base64")}`;
+	} else {
+		headers["Authorization"] = `Bearer ${raw}`;
 	}
 
 	return headers;

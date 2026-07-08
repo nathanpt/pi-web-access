@@ -11,7 +11,6 @@ function runChild(script, env) {
 	const childEnv = { ...process.env };
 	delete childEnv.FIRECRAWL_BASE_URL;
 	delete childEnv.FIRECRAWL_API_KEY;
-	delete childEnv.FIRECRAWL_BASIC_AUTH;
 	delete childEnv.PI_CODING_AGENT_DIR;
 	delete childEnv.XDG_CONFIG_HOME;
 	for (const [key, value] of Object.entries(env)) {
@@ -61,7 +60,7 @@ test("Firecrawl search uses bearer auth and maps results", async () => {
 	]);
 });
 
-test("Firecrawl search uses basic auth when FIRECRAWL_BASIC_AUTH is set", async () => {
+test("Firecrawl search auto-detects Basic Auth when FIRECRAWL_API_KEY contains colon", async () => {
 	const child = runChild(`
 		let capturedHeaders = null;
 		globalThis.fetch = async (url, init) => {
@@ -72,11 +71,11 @@ test("Firecrawl search uses basic auth when FIRECRAWL_BASIC_AUTH is set", async 
 		const { searchWithFirecrawl } = await import(${JSON.stringify(firecrawlModuleUrl)});
 		await searchWithFirecrawl("test", { numResults: 1 }).catch(() => {});
 		console.log(JSON.stringify({ auth: capturedHeaders.Authorization }));
-	`, { FIRECRAWL_BASE_URL: "http://localhost:3002", FIRECRAWL_BASIC_AUTH: "user:pass" });
+	`, { FIRECRAWL_BASE_URL: "http://localhost:3002", FIRECRAWL_API_KEY: "firecrawl:supersecret" });
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	const expected = Buffer.from("user:pass").toString("base64");
+	const expected = Buffer.from("firecrawl:supersecret").toString("base64");
 	assert.equal(output.auth, "Basic " + expected);
 });
 
