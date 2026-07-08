@@ -60,7 +60,7 @@ test("Firecrawl search uses bearer auth and maps results", async () => {
 	]);
 });
 
-test("Firecrawl search auto-detects Basic Auth when FIRECRAWL_API_KEY contains colon", async () => {
+test("Firecrawl search sends Bearer token regardless of FIRECRAWL_API_KEY format", async () => {
 	const child = runChild(`
 		let capturedHeaders = null;
 		globalThis.fetch = async (url, init) => {
@@ -71,12 +71,11 @@ test("Firecrawl search auto-detects Basic Auth when FIRECRAWL_API_KEY contains c
 		const { searchWithFirecrawl } = await import(${JSON.stringify(firecrawlModuleUrl)});
 		await searchWithFirecrawl("test", { numResults: 1 }).catch(() => {});
 		console.log(JSON.stringify({ auth: capturedHeaders.Authorization }));
-	`, { FIRECRAWL_BASE_URL: "http://localhost:3002", FIRECRAWL_API_KEY: "firecrawl:supersecret" });
+	`, { FIRECRAWL_BASE_URL: "http://localhost:3002", FIRECRAWL_API_KEY: "fc-key-with:colon-but-sent-as-bearer" });
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	const expected = Buffer.from("firecrawl:supersecret").toString("base64");
-	assert.equal(output.auth, "Basic " + expected);
+	assert.equal(output.auth, "Bearer fc-key-with:colon-but-sent-as-bearer");
 });
 
 test("Firecrawl is not available without FIRECRAWL_BASE_URL", async () => {
