@@ -3,7 +3,7 @@ import { Box, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { StringEnum, complete, type Model } from "@earendil-works/pi-ai/compat";
 import pLimit from "p-limit";
-import { fetchAllContent, type ExtractedContent } from "./extract.js";
+import type { ExtractedContent, ExtractOptions } from "./extract.js";
 import { normalizeFetchContentParams } from "./fetch-params.js";
 import { clearCloneCache } from "./extractors/github-extract.js";
 import { search, type SearchProvider, type ResolvedSearchProvider } from "./providers/gemini-search.js";
@@ -51,6 +51,27 @@ import {
 	type WebSearchConfig,
 	type WebSearchWorkflow,
 } from "./workflow.js";
+
+// Lazy content-extraction loader. extract.ts pulls the heavy
+// Readability / linkedom / turndown / unpdf dependency graph; deferring its
+// import off the synchronous extension-load path keeps startup snappy. The
+// memoized promise is shared across concurrent first-use callers and is
+// pre-warmed at the end of initializeExtension() so a broken import still
+// surfaces during `pi -e .` load rather than on the first fetch_content.
+interface ExtractModule {
+	fetchAllContent(urls: string[], signal?: AbortSignal, options?: ExtractOptions): Promise<ExtractedContent[]>;
+}
+
+let extractModulePromise: Promise<ExtractModule> | undefined;
+
+async function fetchAllContent(
+	urls: string[],
+	signal?: AbortSignal,
+	options?: ExtractOptions,
+): Promise<ExtractedContent[]> {
+	const extractModule = await (extractModulePromise ??= import("./extract.js"));
+	return extractModule.fetchAllContent(urls, signal, options);
+}
 
 interface ProviderAvailability {
 	perplexity: boolean;
@@ -2726,4 +2747,16 @@ export default function (pi: ExtensionAPI) {
 			}, { triggerTurn: false, deliverAs: "followUp" });
 		},
 	});
+
+	// Pre-warm the deferred content-extraction graph now that registration is
+	// complete. Kicking the load off here keeps a broken extract.ts import
+	// visible during `pi -e .` load (logged and re-thrown so fetchAllContent
+	// callers still see it) instead of deferring the failure to the first
+	// fetch_content. Registration above stays synchronous; this only starts the
+	// async load.
+	extractModulePromise ??= import("./extract.js").catch((err) => {
+		console.error("[pi-web-access] Failed to load content extraction module:", err);
+		throw err;
+	});
+
 }
