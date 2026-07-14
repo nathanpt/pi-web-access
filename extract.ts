@@ -10,6 +10,8 @@ import { isYouTubeURL, isYouTubeEnabled, extractYouTube, extractYouTubeFrame, ex
 import { extractWithUrlContext, extractWithGeminiWeb } from "./providers/gemini-url-context.js";
 import { extractWithParallel } from "./providers/parallel.js";
 import { extractWithOlostep } from "./providers/olostep.js";
+import { isBrightDataAvailable, scrapeWithBrightData } from "./providers/brightdata.js";
+import { detectBrightDataFeed, fetchBrightDataFeed } from "./providers/brightdata-feeds.js";
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./extractors/video-extract.js";
 import { fetchRemoteUrl, validateRemoteUrl, type Lookup } from "./ssrf-protection.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -453,6 +455,19 @@ export async function extractContent(
 		}
 	}
 
+	// Structured platform feeds (Amazon/Reddit/npm/PyPI/…). Only runs when a
+	// Bright Data key is configured; github URLs are handled by the clone path
+	// above, so they never reach here. Falls through to normal extraction if the
+	// snapshot job fails or times out.
+	if (isBrightDataAvailable()) {
+		const feed = detectBrightDataFeed(url);
+		if (feed) {
+			const feedResult = await fetchBrightDataFeed(url, feed, signal);
+			if (feedResult) return feedResult;
+			if (signal?.aborted) return abortedResult(url);
+		}
+	}
+
 	const ytInfo = isYouTubeURL(url);
 	let youtubeEnabled = false;
 	try {
@@ -499,6 +514,15 @@ export async function extractContent(
 	// logged to the activity widget inside the provider.
 	const olostepResult = await extractWithOlostep(url, signal);
 	if (olostepResult) return olostepResult;
+	if (signal?.aborted) return abortedResult(url);
+
+	// Bright Data Web Unlocker: the strongest unblocker (bypasses CAPTCHA / bot
+	// detection), tried after the free HTTP + Jina + Olostep paths and before
+	// Parallel. Only runs when a Bright Data key is configured; returns null to
+	// fall through. (Opt-in provider — never in the silent `auto` search chain,
+	// but available as a fetch_content scrape fallback when keyed.)
+	const brightDataResult = await scrapeWithBrightData(url, signal);
+	if (brightDataResult) return brightDataResult;
 	if (signal?.aborted) return abortedResult(url);
 
 	// Parallel Extract: server-side render + extract, handles JS-heavy pages and PDFs.

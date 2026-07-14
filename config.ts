@@ -38,6 +38,12 @@ export interface RawWebSearchConfig {
 	braveApiKey?: unknown;
 	tavilyApiKey?: unknown;
 	openaiApiKey?: unknown;
+	// Bright Data (opt-in): API token + zone config. Legacy `brightdataZone`
+	// is accepted as the Unlocker zone for back-compat.
+	brightdataApiKey?: unknown;
+	brightdataUnlockerZone?: unknown;
+	brightdataSerpZone?: unknown;
+	brightdataZone?: unknown;
 	// Gateway routing overrides (OpenAI-compatible gateways: LiteLLM, corporate proxies, ...)
 	openaiBaseUrl?: unknown;
 	openaiSearchModel?: unknown;
@@ -237,6 +243,7 @@ const CREDENTIAL_SOURCES: CredentialSource[] = [
 	{ provider: "tavily", env: "TAVILY_API_KEY", configKey: "tavilyApiKey" },
 	{ provider: "openai", env: "OPENAI_API_KEY", configKey: "openaiApiKey" },
 	{ provider: "olostep", env: "OLOSTEP_API_KEY", configKey: "olostepApiKey" },
+	{ provider: "brightdata", env: "BRIGHTDATA_API_TOKEN", configKey: "brightdataApiKey" },
 ];
 
 /** Look up the credential source record for a concrete provider name. */

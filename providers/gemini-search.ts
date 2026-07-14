@@ -10,9 +10,10 @@ import { isSearXNGAvailable, searchWithSearXNG } from "./searxng.js";
 import { isOlostepAvailable, searchWithOlostep } from "./olostep.js";
 import { isBraveAvailable, searchWithBrave } from "./brave.js";
 import { isTavilyAvailable, searchWithTavily } from "./tavily.js";
+import { isBrightDataAvailable, searchWithBrightData } from "./brightdata.js";
 import { isOpenAISearchAvailable, searchWithOpenAI } from "./openai-search.js";
 
-export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng" | "olostep" | "brave" | "tavily" | "openai";
+export type SearchProvider = "auto" | "priority" | "perplexity" | "gemini" | "exa" | "parallel" | "searxng" | "olostep" | "brave" | "tavily" | "openai" | "brightdata";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority">;
 
 /**
@@ -37,7 +38,7 @@ export type ResolvedSearchProvider = Exclude<SearchProvider, "auto" | "priority"
  */
 const DEFAULT_AUTO_ORDER: ResolvedSearchProvider[] = ["exa", "gemini"];
 
-const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "olostep", "brave", "tavily", "openai"]);
+const ALL_PROVIDERS: ReadonlySet<ResolvedSearchProvider> = new Set(["exa", "perplexity", "gemini", "parallel", "searxng", "olostep", "brave", "tavily", "openai", "brightdata"]);
 export { ALL_PROVIDERS };
 
 const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
@@ -50,6 +51,7 @@ const PROVIDER_LABELS: Record<ResolvedSearchProvider, string> = {
 	brave: "Brave",
 	tavily: "Tavily",
 	openai: "OpenAI",
+	brightdata: "Bright Data",
 };
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -150,7 +152,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep" || normalized === "brave" || normalized === "tavily" || normalized === "openai"
+	return normalized === "auto" || normalized === "priority" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep" || normalized === "brave" || normalized === "tavily" || normalized === "openai" || normalized === "brightdata"
 		? normalized
 		: "auto";
 }
@@ -324,6 +326,22 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		throw err;
 	}
 
+	if (provider === "brightdata") {
+		const result = await searchWithBrightData(query, options);
+		if (result) {
+			attempts.push({ provider: "brightdata", status: "success" });
+			return { ...result, provider: "brightdata", trace: { ...trace, selected: "brightdata" } };
+		}
+		attempts.push({ provider: "brightdata", status: "no-result", detail: "no API token configured" });
+		const err = new Error(
+			"Bright Data search requires an API token. Either:\n" +
+			`  1. Set brightdataApiKey in ${CONFIG_PATH}\n` +
+			"  2. Set BRIGHTDATA_API_TOKEN environment variable"
+		);
+		attachSearchTrace(err, { ...trace, selected: null });
+		throw err;
+	}
+
 	if (provider === "exa") {
 		const exaApiKeyConfigured = hasExaApiKey();
 		try {
@@ -433,6 +451,8 @@ async function isCandidateAvailable(p: ResolvedSearchProvider): Promise<boolean>
 			return isTavilyAvailable();
 		case "openai":
 			return isOpenAISearchAvailable();
+		case "brightdata":
+			return isBrightDataAvailable();
 	}
 }
 
@@ -464,6 +484,8 @@ async function runFallbackProvider(
 			return await searchWithTavily(query, options);
 		case "openai":
 			return await searchWithOpenAI(query, options);
+		case "brightdata":
+			return await searchWithBrightData(query, options);
 	}
 }
 
