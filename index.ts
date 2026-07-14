@@ -119,7 +119,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	if (normalized === "auto" || normalized === "priority" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep" || normalized === "brave" || normalized === "tavily" || normalized === "openai") {
+	if (normalized === "auto" || normalized === "priority" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini" || normalized === "parallel" || normalized === "searxng" || normalized === "olostep" || normalized === "brave" || normalized === "tavily" || normalized === "openai" || normalized === "brightdata") {
 		return normalized;
 	}
 	return "auto";
@@ -1284,7 +1284,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-				StringEnum(["auto", "priority", "perplexity", "gemini", "exa", "parallel", "searxng", "olostep", "brave", "tavily", "openai"], { description: "Search provider (default: auto). Use 'priority' to honor the configured providerPriority order." }),
+				StringEnum(["auto", "priority", "perplexity", "gemini", "exa", "parallel", "searxng", "olostep", "brave", "tavily", "openai", "brightdata"], { description: "Search provider (default: auto). Use 'priority' to honor the configured providerPriority order." }),
 			),
 			workflow: Type.Optional(
 				StringEnum(workflowValues, {
