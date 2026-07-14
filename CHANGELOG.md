@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-13
+
 ### Added
 - **Configurable gateway routing for the OpenAI and Perplexity search providers.** Ports upstream [#113](https://github.com/nicobailon/pi-web-access/pull/113) (robobryce). The OpenAI Responses (`web_search`) and Perplexity search calls can now be routed through an OpenAI-compatible gateway (LiteLLM, corporate proxies, ...) instead of only the public vendor endpoints, mirroring the existing `GOOGLE_GEMINI_BASE_URL` / `geminiBaseUrl` pattern. New overrides (env > config-file > default; all default to the public vendor endpoint/model so they're inert unless you opt in):
   - OpenAI: `OPENAI_BASE_URL` / `openaiBaseUrl` (bare URL incl. any version segment, no trailing slash; the extension appends `/responses`) and `OPENAI_SEARCH_MODEL` / `openaiSearchModel` (default `gpt-4.1-mini`).
