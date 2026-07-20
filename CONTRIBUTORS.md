@@ -49,6 +49,8 @@ this fork (either merged directly or cherry-picked with attribution).
 | TianZuo | [@TianZuo555](https://github.com/TianZuo555) | SSRF redirect-aware + DNS-resolving guard hardening + `ssrf.allowRanges` (#101/#102). |
 | Zeeshan Adil | [@Olostep-devs](https://github.com/Olostep-devs) | Olostep answers + scrape provider (#106). |
 | youngshine | [@smithyyang](https://github.com/smithyyang) | Tavily search provider with native synthesized answer + inline content (#78). |
+| fank | [@fank](https://github.com/fank) | Firecrawl self-hosted search + scrape provider (#123). |
+| Trey Hoover | [@treyhoover](https://github.com/treyhoover) | Web activity widget factory fix — pass `() => new Text(...)` instead of a `Text` instance to `ctx.ui.setWidget` (#132). |
 
 ## Acknowledgements
 

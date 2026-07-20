@@ -7,6 +7,10 @@ export interface WebSearchConfig {
 	summaryModel?: string;
 	/** SearXNG self-hosted metasearch base URL (optional `web_search` provider). */
 	searxngBaseUrl?: string;
+	/** Firecrawl self-hosted search + scrape base URL (optional `web_search` + `fetch_content` provider). */
+	firecrawlBaseUrl?: string;
+	/** Firecrawl API key (optional Bearer auth; reverse-proxy Basic auth via the FIRECRAWL_BASIC_AUTH env). */
+	firecrawlApiKey?: string;
 	/** Olostep API key (optional `web_search` provider + `fetch_content` scrape fallback). */
 	olostepApiKey?: string;
 	webSearch?: {

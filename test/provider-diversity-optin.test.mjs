@@ -13,7 +13,7 @@ import { test } from "node:test";
 const src = readFileSync(new URL("../providers/gemini-search.ts", import.meta.url), "utf8");
 const autoOrderLine = src.match(/const DEFAULT_AUTO_ORDER[^;]*;/)?.[0] ?? "";
 
-const OPT_IN = ["perplexity", "parallel", "brave", "tavily", "openai", "searxng", "olostep"];
+const OPT_IN = ["perplexity", "parallel", "brave", "tavily", "openai", "searxng", "olostep", "firecrawl"];
 
 for (const name of OPT_IN) {
 	test(`${name} is in the SearchProvider union + ALL_PROVIDERS (routable)`, () => {

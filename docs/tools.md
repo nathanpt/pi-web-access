@@ -4,7 +4,7 @@ Pi Web Access registers four tools with the Pi agent.
 
 ## web_search
 
-Search the web via Exa, Perplexity AI, Gemini, Parallel, a self-hosted SearXNG instance, Olostep, Brave, Tavily, or OpenAI. Returns a synthesized answer with source citations. The tool result's `details` object includes a per-query `trace` (read-only routing audit: which providers were considered, skipped, errored, and which produced the result) so you can see *why* a provider was chosen.
+Search the web via Exa, Perplexity AI, Gemini, Parallel, a self-hosted SearXNG instance, Olostep, Brave, Tavily, OpenAI, or a self-hosted Firecrawl instance. Returns a synthesized answer with source citations. The tool result's `details` object includes a per-query `trace` (read-only routing audit: which providers were considered, skipped, errored, and which produced the result) so you can see *why* a provider was chosen.
 
 ```typescript
 web_search({ query: "rust async programming" })
