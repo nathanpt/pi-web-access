@@ -29,3 +29,17 @@ test("configuration docs document webSearch.enabled", () => {
 	assert.match(configDocSrc, /"webSearch": \{ "enabled": true \}/);
 	assert.match(configDocSrc, /webSearch\.enabled` to `false` to unregister the `web_search` tool/);
 });
+
+test("web activity widget uses a supported component factory", () => {
+	// ctx.ui.setWidget accepts a string array or a factory; passing a Text
+	// instance reached the factory branch and threw "content is not a
+	// function". The fix wraps the instance in a no-arg factory (upstream #132).
+	assert.match(
+		indexSrc,
+		/ctx\.ui\.setWidget\("web-activity", \(\) => new Text\(lines\.join\("\\n"\), 0, 0\)\);/,
+	);
+	assert.doesNotMatch(
+		indexSrc,
+		/ctx\.ui\.setWidget\("web-activity", new Text/,
+	);
+});
