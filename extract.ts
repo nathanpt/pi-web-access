@@ -11,6 +11,7 @@ import { extractWithUrlContext, extractWithGeminiWeb } from "./providers/gemini-
 import { extractWithParallel } from "./providers/parallel.js";
 import { extractWithOlostep } from "./providers/olostep.js";
 import { isBrightDataAvailable, scrapeWithBrightData } from "./providers/brightdata.js";
+import { isFirecrawlAvailable, extractWithFirecrawl } from "./providers/firecrawl.js";
 import { detectBrightDataFeed, fetchBrightDataFeed } from "./providers/brightdata-feeds.js";
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./extractors/video-extract.js";
 import { fetchRemoteUrl, validateRemoteUrl, type Lookup } from "./ssrf-protection.js";
@@ -506,6 +507,16 @@ export async function extractContent(
 	const jinaResult = await extractWithJinaReader(url, signal, options?.lookup);
 	if (jinaResult) return jinaResult;
 	if (signal?.aborted) return abortedResult(url);
+
+	// Firecrawl scrape: self-hosted, Playwright-rendered Markdown. Tried after
+	// the free HTTP + Jina paths and before paid Olostep/Bright Data. Only runs
+	// when a base URL is configured; returns null to fall through (chain
+	// convention — never throws; errors logged inside the provider).
+	if (isFirecrawlAvailable()) {
+		const fcResult = await extractWithFirecrawl(url, signal);
+		if (fcResult) return fcResult;
+		if (signal?.aborted) return abortedResult(url);
+	}
 
 	// Olostep scrape: paid server-side render → markdown. Slots after the free
 	// Jina Reader and before Parallel (another paid renderer), adding another

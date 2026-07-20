@@ -26,11 +26,11 @@
 
 ## Why Pi Web Access
 
-**Zero Config** — Works out of the box with Exa MCP (no API key needed); the `auto` fallback adds Gemini (API key, gateway, or browser-cookie Web). Every paid-key provider — Perplexity, Parallel, Brave, Tavily, OpenAI — plus self-hosted SearXNG and Olostep is **opt-in**, so a configured key never silently routes (or bills). Pick any of them via `provider:` / `providerPriority`.
+**Zero Config** — Works out of the box with Exa MCP (no API key needed); the `auto` fallback adds Gemini (API key, gateway, or browser-cookie Web). Every paid-key provider — Perplexity, Parallel, Brave, Tavily, OpenAI — plus self-hosted SearXNG, Olostep, and Firecrawl is **opt-in**, so a configured key never silently routes (or bills). Pick any of them via `provider:` / `providerPriority`.
 
 **Video Understanding** — Point it at a YouTube video or local screen recording and ask questions about what's on screen. Full transcripts, visual descriptions, and frame extraction at exact timestamps.
 
-**Smart Fallbacks** — Every capability has a fallback chain, so something always works. `auto` search tries Exa (direct API if keyed, zero-config MCP if not), then Gemini (API → browser-cookie Web). Paid providers (Perplexity, Parallel, Brave, Tavily, OpenAI) and self-hosted SearXNG / Olostep are **opt-in** — never silently tried or billed — so use `provider: "priority"` + a `providerPriority` list to bring them in. YouTube tries Gemini Web → API → Perplexity. Blocked pages retry through Jina Reader, Olostep scrape, Parallel, and Gemini extraction.
+**Smart Fallbacks** — Every capability has a fallback chain, so something always works. `auto` search tries Exa (direct API if keyed, zero-config MCP if not), then Gemini (API → browser-cookie Web). Paid providers (Perplexity, Parallel, Brave, Tavily, OpenAI) and self-hosted SearXNG / Olostep / Firecrawl are **opt-in** — never silently tried or billed — so use `provider: "priority"` + a `providerPriority` list to bring them in. YouTube tries Gemini Web → API → Perplexity. Blocked pages retry through Jina Reader, Firecrawl, Olostep scrape, Bright Data, Parallel, and Gemini extraction.
 
 **Headless-Friendly** — `workflow: "auto-summary"` generates a model summary inline without ever opening a browser, so it works in `-p` / CI / SSH sessions. Pair with `allowCurator: false` for a fully headless setup. Both are settable from the command: `/webaccess workflow auto-summary` and `/webaccess allow-curator off`.
 
@@ -42,7 +42,7 @@
 
 | Capability | What you get |
 | --- | --- |
-| 🔍 **Web search** | `auto`: Exa (zero-config MCP) · Gemini (API + browser-cookie Web). Opt-in paid/self-hosted: Perplexity · Parallel · Brave · Tavily · OpenAI · SearXNG · Olostep. Use the fallback chain or your own `providerPriority` order |
+| 🔍 **Web search** | `auto`: Exa (zero-config MCP) · Gemini (API + browser-cookie Web). Opt-in paid/self-hosted: Perplexity · Parallel · Brave · Tavily · OpenAI · SearXNG · Olostep · Firecrawl. Use the fallback chain or your own `providerPriority` order |
 | 📄 **Content fetch** | Readability + RSC + Jina Reader + Gemini extraction, GitHub clone, PDF text, SSRF-safe |
 | 🎥 **Video understanding** | YouTube transcripts & visual Q&A, local-video frame extraction at timestamps |
 | 🧠 **Headless summaries** | `auto-summary` workflow — model summaries without the browser curator |
@@ -80,7 +80,7 @@ Works immediately with no API keys — Exa MCP provides zero-config search. For 
 /webaccess set-key openai sk-...
 ```
 
-Keys are validated and never echoed back (the confirmation shows only a last-4 fingerprint). SearXNG uses a base URL instead of a key (`/webaccess` shows its status; configure via `searxngBaseUrl` / `SEARXNG_BASE_URL`). You can also edit `~/.pi/web-search.json` directly, or set the env vars (`EXA_API_KEY`, `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, `PARALLEL_API_KEY`, `BRAVE_API_KEY`, `TAVILY_API_KEY`, `OLOSTEP_API_KEY`, `OPENAI_API_KEY`, `SEARXNG_BASE_URL`). Route the OpenAI / Perplexity providers through an OpenAI-compatible gateway with `OPENAI_BASE_URL` / `PERPLEXITY_BASE_URL` (plus `OPENAI_SEARCH_MODEL` / `PERPLEXITY_MODEL` for non-vendor model ids):
+Keys are validated and never echoed back (the confirmation shows only a last-4 fingerprint). SearXNG and Firecrawl use a base URL instead of a key (configure via `searxngBaseUrl` / `SEARXNG_BASE_URL` and `firecrawlBaseUrl` / `FIRECRAWL_BASE_URL`; Firecrawl also takes an optional `FIRECRAWL_API_KEY` / `firecrawlApiKey` for Bearer auth, and `FIRECRAWL_BASIC_AUTH=user:pass` for reverse-proxy Basic auth). You can also edit `~/.pi/web-search.json` directly, or set the env vars (`EXA_API_KEY`, `PERPLEXITY_API_KEY`, `GEMINI_API_KEY`, `PARALLEL_API_KEY`, `BRAVE_API_KEY`, `TAVILY_API_KEY`, `OLOSTEP_API_KEY`, `OPENAI_API_KEY`, `SEARXNG_BASE_URL`, `FIRECRAWL_BASE_URL`, `FIRECRAWL_API_KEY`). Route the OpenAI / Perplexity providers through an OpenAI-compatible gateway with `OPENAI_BASE_URL` / `PERPLEXITY_BASE_URL` (plus `OPENAI_SEARCH_MODEL` / `PERPLEXITY_MODEL` for non-vendor model ids):
 
 ```json
 {
@@ -94,11 +94,13 @@ Keys are validated and never echoed back (the confirmation shows only a last-4 f
   "openaiApiKey": "sk-...",
   "openaiBaseUrl": "https://my-gateway.example.com/v1",
   "perplexityBaseUrl": "https://my-gateway.example.com",
-  "searxngBaseUrl": "https://search.example.com"
+  "searxngBaseUrl": "https://search.example.com",
+  "firecrawlBaseUrl": "http://localhost:3002",
+  "firecrawlApiKey": "fc-..."
 }
 ```
 
-In `auto` mode (default), `web_search` tries providers in this order: Exa (direct API if keyed, zero-config MCP if not) → Gemini (API, then Web when browser-cookie access is enabled). **Paid-key providers are opt-in** — Perplexity, Parallel, Brave, Tavily, and OpenAI are never silently tried or billed in `auto`; add them with `provider: "<name>"` or a `providerPriority` list. For full control over the order, set a `providerPriority` list in config (e.g. `["perplexity", "exa", "gemini"]`) and select `provider: "priority"` — providers are tried in that order, skipping any that are unavailable and falling through on error. If `providerPriority` is unset or invalid, `priority` falls back to the built-in `auto` order. Placeholder values (e.g. `"your-key"`) are treated as missing, so a leftover template value never causes a 401 mid-fallback. (SearXNG and Olostep are opt-in too — configured via base URL / key explicitly.)
+In `auto` mode (default), `web_search` tries providers in this order: Exa (direct API if keyed, zero-config MCP if not) → Gemini (API, then Web when browser-cookie access is enabled). **Paid-key providers are opt-in** — Perplexity, Parallel, Brave, Tavily, and OpenAI are never silently tried or billed in `auto`; self-hosted SearXNG, Olostep, and Firecrawl likewise. Add them with `provider: "<name>"` or a `providerPriority` list. For full control over the order, set a `providerPriority` list in config (e.g. `["perplexity", "exa", "gemini"]`) and select `provider: "priority"` — providers are tried in that order, skipping any that are unavailable and falling through on error. If `providerPriority` is unset or invalid, `priority` falls back to the built-in `auto` order. Placeholder values (e.g. `"your-key"`) are tr…
 
 Optional dependencies for video frame extraction:
 
@@ -211,9 +213,10 @@ referencing upstream commits or PRs, please cite the original author's work.
 | `providers/exa.ts` | Exa.ai search provider — direct API and MCP proxy, budget tracking |
 | `providers/perplexity.ts` | Perplexity API client with rate limiting |
 | `providers/parallel.ts` | Parallel search provider — `api.parallel.ai` web search, opt-in (reachable via `providerPriority` or `provider: "parallel"`) |
-| `providers/gemini-search.ts` | Search routing across all providers — shared fallback loop (`DEFAULT_AUTO_ORDER = [exa, perplexity, gemini, parallel]`; searxng/olostep/brave/tavily/openai opt-in); Provider Trace (`SearchTrace`, `attachSearchTrace`/`getSearchTrace`); `ALL_PROVIDERS` is the single source of truth for the provider list |
+| `providers/gemini-search.ts` | Search routing across all providers — shared fallback loop (`DEFAULT_AUTO_ORDER = [exa, gemini]`; searxng/olostep/brave/tavily/openai/brightdata/firecrawl opt-in); Provider Trace (`SearchTrace`, `attachSearchTrace`/`getSearchTrace`); `ALL_PROVIDERS` is the single source of truth for the provider list |
 | `providers/searxng.ts` | SearXNG self-hosted metasearch provider (no key; base URL) — opt-in |
 | `providers/olostep.ts` | Olostep answers provider **+** `fetch_content` scrape fallback — opt-in, key-gated |
+| `providers/firecrawl.ts` | Firecrawl self-hosted search + scrape provider (no key required; base URL; optional Bearer / Basic auth) — opt-in |
 | `providers/brave.ts` | Brave Search API provider — opt-in, key-gated |
 | `providers/tavily.ts` | Tavily Search API provider (native answer + `inlineContent`) — opt-in, key-gated |
 | `providers/openai-search.ts` | OpenAI Responses API + built-in `web_search` tool provider — opt-in, key-gated (Codex-subscription auth deferred) |
@@ -243,7 +246,7 @@ Upstream revived in late June 2026 (v0.11.0–v0.13.0) and now independently shi
 
 - **`/webaccess` command.** A config UX for inspecting status and setting / clearing / dry-run testing provider keys, plus `doctor` diagnostics — no JSON or env-var editing. Upstream relies on hand-editing `~/.pi/web-search.json` and env vars.
 - **`providerPriority` routing.** Set a custom provider try-order (e.g. `["perplexity", "exa", "gemini"]`) and select it with `provider: "priority"`. Upstream exposes only the built-in `auto` order.
-- **SearXNG** (self-hosted metasearch, base-URL, no key) and **Olostep** (answers API + a `fetch_content` scrape fallback). Two extra opt-in providers upstream doesn't carry.
+- **SearXNG** (self-hosted metasearch, base-URL, no key), **Olostep** (answers API + a `fetch_content` scrape fallback), and **Firecrawl** (self-hosted search + scrape, base-URL, optional Bearer/Basic auth). Three extra opt-in providers upstream doesn't carry.
 
 ### Intentional, permanent divergences
 
