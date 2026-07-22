@@ -49,6 +49,8 @@ export interface RawWebSearchConfig {
 	// Gateway routing overrides (OpenAI-compatible gateways: LiteLLM, corporate proxies, ...)
 	openaiBaseUrl?: unknown;
 	openaiSearchModel?: unknown;
+	// Parallel Responses-API reasoning effort (low|medium|high); see providers/parallel.ts.
+	parallelReasoningEffort?: unknown;
 	perplexityBaseUrl?: unknown;
 	perplexityModel?: unknown;
 	// Browser cookies

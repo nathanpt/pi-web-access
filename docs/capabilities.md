@@ -47,7 +47,7 @@ When Readability fails or returns only a cookie notice, the extension retries vi
 ```
 web_search(query)
   → Exa (direct API with key, zero-config MCP without) → Gemini API → Gemini Web (if browser cookies enabled)
-  → opt-in providers (NOT in the auto chain — a configured key/base-URL never silently routes or bills): Perplexity, Parallel, Brave, Tavily, OpenAI, SearXNG (self-hosted), Olostep, Firecrawl (self-hosted, also a fetch_content scrape fallback)
+  → opt-in providers (NOT in the auto chain — a configured key/base-URL never silently routes or bills): Perplexity, Parallel (Responses API: synthesized answer + `url_citation` citations, `reasoning.effort` low/medium/high), Brave, Tavily, OpenAI, SearXNG (self-hosted), Olostep, Firecrawl (self-hosted, also a fetch_content scrape fallback)
 
 fetch_content(url)
   → Video file?  Gemini API (Files API) → Gemini Web (if browser cookies enabled)

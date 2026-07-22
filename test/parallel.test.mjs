@@ -5,8 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 
-import { buildSearchQueriesFromObjective } from "../providers/parallel.ts";
-
 // Child-process integration tests for parallel.ts.
 //
 // Harness mines the isolation pattern from upstream PR #91's
@@ -21,11 +19,13 @@ import { buildSearchQueriesFromObjective } from "../providers/parallel.ts";
 // searchWithParallel, extractWithParallel) end-to-end as a true regression
 // guard rather than a reimplementation.
 //
-// Assertions describe THIS repo's parallel.ts. PR #91 is NOT a literal
-// duplicate: its test set asserts four features we now ship too —
-// placeholder-key detection (global in config.ts), query expansion,
-// inlineContent, and a MIN_USEFUL_CONTENT extract gate — so those behaviors
-// are now covered HERE rather than carried over from PR #91.
+// v0.19.0 cutover: the search path now calls the Parallel Responses API
+// (`POST /v1/responses`, `Authorization: Bearer`, returns a synthesized
+// answer + `url_citation` citations — same wire format as OpenAI's Responses
+// API). The 0.16.0-era `buildSearchQueriesFromObjective` query expansion and
+// the search-path `inlineContent` are gone (Responses does its own multi-step
+// research and returns citations, not excerpts). The `/v1/extract` path
+// (`extractWithParallel`, incl. its `MIN_USEFUL_CONTENT` gate) is unchanged.
 
 const parallelModuleUrl = new URL("../providers/parallel.ts", import.meta.url).href;
 
@@ -33,17 +33,22 @@ const parallelModuleUrl = new URL("../providers/parallel.ts", import.meta.url).h
 // tsx provides the transform for the spawned child to import .ts source.
 const TS_NODE_ARGS = ["--import", "tsx"];
 
+// Responses-API shape: a single `message` output item whose `output_text`
+// part carries the synthesized answer + `url_citation` annotations.
 const sampleSearchResponse = {
-	results: [
+	output: [
 		{
-			url: "https://example.test/article",
-			title: "Example Article",
-			excerpts: ["First excerpt.", "Second excerpt."],
-		},
-		{
-			url: "https://example.test/other",
-			title: "Other Page",
-			excerpts: ["Other content here."],
+			type: "message",
+			content: [
+				{
+					type: "output_text",
+					text: "Synthesized answer about the topic.",
+					annotations: [
+						{ type: "url_citation", url: "https://example.test/article", title: "Example Article", start_index: 0, end_index: 10 },
+						{ type: "url_citation", url: "https://example.test/other", title: "Other Page", start_index: 11, end_index: 20 },
+					],
+				},
+			],
 		},
 	],
 };
@@ -72,6 +77,7 @@ function runWithHome(home, script, extraEnv = {}) {
 	delete env.PI_CODING_AGENT_DIR;
 	delete env.XDG_CONFIG_HOME;
 	delete env.PARALLEL_API_KEY;
+	delete env.PARALLEL_REASONING_EFFORT;
 	Object.assign(env, extraEnv);
 
 	return spawnSync(process.execPath, ["--input-type=module", ...TS_NODE_ARGS], {
@@ -253,76 +259,87 @@ try {
 		assert.match(out, /PARALLEL_API_KEY/);
 	});
 
-	test("prefers PARALLEL_API_KEY env over the config key (via x-api-key header)", async () => {
+	test("prefers PARALLEL_API_KEY env over the config key (via Authorization Bearer header)", async () => {
 		const home = await createTempHome();
 		await writeWebSearchConfig(home, { parallelApiKey: "config-key" });
 		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response: { results: [] } }])}
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: { output: [] } }])}
 await searchWithParallel("q");
-console.log(JSON.stringify({ apiKey: globalThis.__getParallelFetchCalls()[0]?.headers?.["x-api-key"] ?? null }));
+const call = globalThis.__getParallelFetchCalls()[0];
+console.log(JSON.stringify({
+	auth: call?.headers?.Authorization ?? null,
+	xApiKey: call?.headers?.["x-api-key"] ?? null,
+}));
 `, { PARALLEL_API_KEY: "env-key-wins" });
 		assertChildSuccess(child);
-		assert.equal(JSON.parse(child.stdout.trim()).apiKey, "env-key-wins");
+		const parsed = JSON.parse(child.stdout.trim());
+		assert.equal(parsed.auth, "Bearer env-key-wins");
+		// Auth moved from the legacy x-api-key header to Bearer with the Responses cutover.
+		assert.equal(parsed.xApiKey, null);
 	});
 
-	test("maps a V1 search response to answer + results", async () => {
+	test("posts to /v1/responses with model + input + reasoning body shape", async () => {
 		const home = await createTempHome();
 		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
 		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response: sampleSearchResponse }])}
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: { output: [] } }])}
+await searchWithParallel("the query");
+const call = globalThis.__getParallelFetchCalls()[0];
+console.log(JSON.stringify({
+	url: call?.url ?? null,
+	method: call?.method ?? null,
+	model: call?.body?.model ?? null,
+	input: call?.body?.input ?? null,
+	reasoning: call?.body?.reasoning ?? null,
+	tools: call?.body?.tools ?? null,
+}));
+`);
+		assertChildSuccess(child);
+		const parsed = JSON.parse(child.stdout.trim());
+		assert.match(parsed.url, /api\.parallel\.ai\/v1\/responses/);
+		assert.equal(parsed.method, "POST");
+		assert.equal(parsed.model, "parallel");
+		assert.equal(parsed.input, "the query");
+		assert.deepEqual(parsed.reasoning, { effort: "low" });
+		// No tools/web_search entry — grounding is automatic on the Responses endpoint.
+		assert.equal(parsed.tools, null);
+	});
+
+	test("maps a Responses payload to answer + citation results", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
+		const child = runSearch(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: sampleSearchResponse }])}
 const result = await searchWithParallel("parallel search query");
 console.log(JSON.stringify({
 	answer: result.answer,
 	results: result.results,
 	inlineContent: result.inlineContent,
-	callBody: globalThis.__getParallelFetchCalls()[0]?.body ?? null,
 }));
 `);
 		assertChildSuccess(child, "search mapping");
 		const parsed = JSON.parse(child.stdout.trim());
 
-		// Answer assembles excerpts with a "Source: title (url)" footer.
-		assert.match(parsed.answer, /First excerpt\.\s+Second excerpt\./);
-		assert.match(parsed.answer, /Source: Example Article \(https:\/\/example\.test\/article\)/);
-		assert.match(parsed.answer, /Other content here\./);
-		assert.match(parsed.answer, /Source: Other Page \(https:\/\/example\.test\/other\)/);
-
-		// Results mapped to { title, url, snippet }.
+		// answer is the synthesized output_text.
+		assert.equal(parsed.answer, "Synthesized answer about the topic.");
+		// results are the url_citation annotations, mapped to { title, url, snippet }.
 		assert.equal(parsed.results.length, 2);
 		assert.equal(parsed.results[0].url, "https://example.test/article");
 		assert.equal(parsed.results[0].title, "Example Article");
-		assert.equal(parsed.results[0].snippet, "First excerpt. Second excerpt.");
-		assert.equal(parsed.results[1].snippet, "Other content here.");
-
-		// Per-source excerpt content surfaced as structured inline content.
-		assert.ok(Array.isArray(parsed.inlineContent), "inlineContent should be populated");
-		assert.equal(parsed.inlineContent.length, 2);
-		assert.deepEqual(
-			parsed.inlineContent.map((c) => ({ url: c.url, title: c.title, content: c.content, error: c.error })),
-			[
-				{ url: "https://example.test/article", title: "Example Article", content: "First excerpt. Second excerpt.", error: null },
-				{ url: "https://example.test/other", title: "Other Page", content: "Other content here.", error: null },
-			],
-		);
-
-		// Request body shape.
-		assert.equal(parsed.callBody.objective, "parallel search query");
-		// Query expansion: 3 content tokens -> full phrase + first/second halves.
-		assert.deepEqual(parsed.callBody.search_queries, [
-			"parallel search query",
-			"parallel search",
-			"search query",
-		]);
-		assert.equal(parsed.callBody.mode, "basic");
-		assert.equal(parsed.callBody.max_chars_total, 40000);
-		assert.equal(parsed.callBody.advanced_settings.max_results, 5);
+		assert.equal(parsed.results[1].url, "https://example.test/other");
+		assert.equal(parsed.results[1].title, "Other Page");
+		for (const r of parsed.results) {
+			assert.equal(typeof r.snippet, "string");
+		}
+		// No inlineContent — Responses returns citations, not excerpts.
+		assert.equal(parsed.inlineContent, undefined);
 	});
 
-	test("returns an empty answer and no results for an empty results array", async () => {
+	test("returns empty answer + results for an empty output array", async () => {
 		const home = await createTempHome();
 		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
 		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response: { results: [] } }])}
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: { output: [] } }])}
 const result = await searchWithParallel("empty query");
 console.log(JSON.stringify({ answer: result.answer, results: result.results }));
 `);
@@ -332,62 +349,11 @@ console.log(JSON.stringify({ answer: result.answer, results: result.results }));
 		assert.deepEqual(parsed.results, []);
 	});
 
-	test("keeps URL-bearing results but omits content-less entries from the answer", async () => {
-		const home = await createTempHome();
-		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
-		// The returned `results` array only drops entries with an empty url;
-		// the synthesized `answer` additionally drops entries that have no
-		// excerpt content (buildAnswerFromResults requires both).
-		const dropResponse = {
-			results: [
-				{ url: "https://example.test/kept", title: "Kept", excerpts: ["keep me"] },
-				{ url: "", title: "No URL", excerpts: ["dropped"] },
-				{ url: "https://example.test/no-excerpts", title: "No Excerpts", excerpts: [] },
-				{ url: "https://example.test/blank", title: "Blank", excerpts: ["   "] },
-			],
-		};
-		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response: dropResponse }])}
-const result = await searchWithParallel("drop query");
-console.log(JSON.stringify({ results: result.results, answer: result.answer }));
-`);
-		assertChildSuccess(child);
-		const parsed = JSON.parse(child.stdout.trim());
-
-		// Results: only the URL-less entry is dropped; snippet-less entries stay.
-		assert.deepEqual(parsed.results.map((r) => r.url), [
-			"https://example.test/kept",
-			"https://example.test/no-excerpts",
-			"https://example.test/blank",
-		]);
-		const byUrl = Object.fromEntries(parsed.results.map((r) => [r.url, r]));
-		assert.equal(byUrl["https://example.test/kept"].snippet, "keep me");
-		assert.equal(byUrl["https://example.test/no-excerpts"].snippet, "");
-
-		// Answer: includes only the entry with both a url AND excerpt content.
-		assert.match(parsed.answer, /keep me/);
-		assert.doesNotMatch(parsed.answer, /dropped/);
-	});
-
-	test("truncates the per-result snippet to 1000 characters", async () => {
-		const home = await createTempHome();
-		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
-		const longExcerpt = "x".repeat(2500);
-		const longResponse = { results: [{ url: "https://example.test/long", title: "Long", excerpts: [longExcerpt] }] };
-		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response: longResponse }])}
-const result = await searchWithParallel("long query");
-console.log(JSON.stringify({ snippetLength: result.results[0]?.snippet?.length ?? 0 }));
-`);
-		assertChildSuccess(child);
-		assert.equal(JSON.parse(child.stdout.trim()).snippetLength, 1000);
-	});
-
-	test("sends domain + recency filters in the request body", async () => {
+	test("sends domain + recency + numResults hints in the instructions field (not source_policy)", async () => {
 		const home = await createTempHome();
 		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
 		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response: { results: [] } }])}
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: { output: [] } }])}
 await searchWithParallel("filtered query", {
 	domainFilter: ["example.com", "-spam.com"],
 	recencyFilter: "week",
@@ -397,47 +363,66 @@ console.log(JSON.stringify({ callBody: globalThis.__getParallelFetchCalls()[0]?.
 `);
 		assertChildSuccess(child);
 		const parsed = JSON.parse(child.stdout.trim());
-		const policy = parsed.callBody.advanced_settings.source_policy;
 
-		assert.equal(parsed.callBody.advanced_settings.max_results, 10);
-		assert.deepEqual(policy.include_domains, ["example.com"]);
-		assert.deepEqual(policy.exclude_domains, ["spam.com"]);
-		assert.match(policy.after_date, /^\d{4}-\d{2}-\d{2}$/);
-		// "week" -> ~7 days ago (tolerant: within 2 days of 7 days ago).
-		const afterDate = new Date(`${policy.after_date}T00:00:00Z`);
-		const weekAgo = new Date(Date.now() - 7 * 86400000);
-		assert.ok(Math.abs(afterDate.getTime() - weekAgo.getTime()) < 2 * 86400000);
+		// No legacy /v1/search fields.
+		assert.equal(parsed.callBody.advanced_settings, undefined);
+		assert.equal(parsed.callBody.source_policy, undefined);
+
+		// All hints woven into the instructions string.
+		assert.equal(typeof parsed.callBody.instructions, "string");
+		assert.match(parsed.callBody.instructions, /example\.com/);
+		assert.match(parsed.callBody.instructions, /spam\.com/);
+		// "week" -> ~7 days ago.
+		assert.match(parsed.callBody.instructions, /within the last 7 days/i);
+		assert.match(parsed.callBody.instructions, /Cite up to 10 distinct sources/);
 	});
 
-	test("caps numResults at 20", async () => {
+	test("omits instructions from the body when no filters are given", async () => {
 		const home = await createTempHome();
 		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
 		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response: { results: [] } }])}
-await searchWithParallel("capped query", { numResults: 99 });
-console.log(JSON.stringify({ maxResults: globalThis.__getParallelFetchCalls()[0]?.body?.advanced_settings?.max_results ?? null }));
-`);
-		assertChildSuccess(child);
-		assert.equal(JSON.parse(child.stdout.trim()).maxResults, 20);
-	});
-
-	test("does not populate source_policy when no domain/recency filters are given", async () => {
-		const home = await createTempHome();
-		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
-		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response: { results: [] } }])}
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: { output: [] } }])}
 await searchWithParallel("plain query");
-console.log(JSON.stringify({ sourcePolicy: globalThis.__getParallelFetchCalls()[0]?.body?.advanced_settings?.source_policy ?? null }));
+console.log(JSON.stringify({ instructions: globalThis.__getParallelFetchCalls()[0]?.body?.instructions ?? null }));
 `);
 		assertChildSuccess(child);
-		assert.equal(JSON.parse(child.stdout.trim()).sourcePolicy, null);
+		assert.equal(JSON.parse(child.stdout.trim()).instructions, null);
+	});
+
+	test("caps parsed results at numResults", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
+		// 5 distinct citations; numResults=3 → sliced to 3.
+		const manyCitations = {
+			output: [{
+				type: "message",
+				content: [{
+					type: "output_text",
+					text: "answer",
+					annotations: [1, 2, 3, 4, 5].map((n) => ({
+						type: "url_citation",
+						url: `https://example.test/c${n}`,
+						title: `Citation ${n}`,
+						start_index: 0,
+						end_index: 1,
+					})),
+				}],
+			}],
+		};
+		const child = runSearch(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: manyCitations }])}
+const result = await searchWithParallel("capped query", { numResults: 3 });
+console.log(JSON.stringify({ count: result.results.length }));
+`);
+		assertChildSuccess(child);
+		assert.equal(JSON.parse(child.stdout.trim()).count, 3);
 	});
 
 	test("throws on a non-ok HTTP response", async () => {
 		const home = await createTempHome();
 		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
 		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", ok: false, status: 429, response: "rate limited" }])}
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", ok: false, status: 429, response: "rate limited" }])}
 try {
 	await searchWithParallel("rate limited query");
 	console.log("NO_THROW");
@@ -451,19 +436,64 @@ try {
 		assert.match(out, /Parallel API error 429/);
 	});
 
-	test("handles a results field that is not an array (defensive)", async () => {
+	test("defaults reasoning.effort to low", async () => {
 		const home = await createTempHome();
 		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
-		const weirdResponse = { results: "not-an-array" };
 		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response: weirdResponse }])}
-const result = await searchWithParallel("weird response");
-console.log(JSON.stringify({ answer: result.answer, results: result.results }));
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: { output: [] } }])}
+await searchWithParallel("q");
+console.log(JSON.stringify({ effort: globalThis.__getParallelFetchCalls()[0]?.body?.reasoning?.effort ?? null }));
 `);
 		assertChildSuccess(child);
-		const parsed = JSON.parse(child.stdout.trim());
-		assert.equal(parsed.answer, "");
-		assert.deepEqual(parsed.results, []);
+		assert.equal(JSON.parse(child.stdout.trim()).effort, "low");
+	});
+
+	test("honors PARALLEL_REASONING_EFFORT=high", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
+		const child = runSearch(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: { output: [] } }])}
+await searchWithParallel("q");
+console.log(JSON.stringify({ effort: globalThis.__getParallelFetchCalls()[0]?.body?.reasoning?.effort ?? null }));
+`, { PARALLEL_REASONING_EFFORT: "high" });
+		assertChildSuccess(child);
+		assert.equal(JSON.parse(child.stdout.trim()).effort, "high");
+	});
+
+	test("honors parallelReasoningEffort from config", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key", parallelReasoningEffort: "medium" });
+		const child = runSearch(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: { output: [] } }])}
+await searchWithParallel("q");
+console.log(JSON.stringify({ effort: globalThis.__getParallelFetchCalls()[0]?.body?.reasoning?.effort ?? null }));
+`);
+		assertChildSuccess(child);
+		assert.equal(JSON.parse(child.stdout.trim()).effort, "medium");
+	});
+
+	test("falls back to low for a bogus PARALLEL_REASONING_EFFORT value", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
+		const child = runSearch(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: { output: [] } }])}
+await searchWithParallel("q");
+console.log(JSON.stringify({ effort: globalThis.__getParallelFetchCalls()[0]?.body?.reasoning?.effort ?? null }));
+`, { PARALLEL_REASONING_EFFORT: "bogus" });
+		assertChildSuccess(child);
+		assert.equal(JSON.parse(child.stdout.trim()).effort, "low");
+	});
+
+	test("prefers PARALLEL_REASONING_EFFORT env over the config value", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key", parallelReasoningEffort: "medium" });
+		const child = runSearch(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: { output: [] } }])}
+await searchWithParallel("q");
+console.log(JSON.stringify({ effort: globalThis.__getParallelFetchCalls()[0]?.body?.reasoning?.effort ?? null }));
+`, { PARALLEL_REASONING_EFFORT: "high" });
+		assertChildSuccess(child);
+		assert.equal(JSON.parse(child.stdout.trim()).effort, "high");
 	});
 });
 
@@ -614,130 +644,6 @@ console.log(JSON.stringify({ url: result?.url ?? null, title: result?.title ?? n
 		// Result is taken from the first (non-matching) entry, but url is the REQUESTED url.
 		assert.equal(parsed.url, extractTargetUrl);
 		assert.equal(parsed.title, "Fallback");
-	});
-});
-
-describe("buildSearchQueriesFromObjective", () => {
-	test("returns [] for blank / whitespace-only input", () => {
-		assert.deepEqual(buildSearchQueriesFromObjective(""), []);
-		assert.deepEqual(buildSearchQueriesFromObjective("   \t\n"), []);
-	});
-
-	test("returns a single query when only one content token remains", () => {
-		assert.deepEqual(buildSearchQueriesFromObjective("paralleloptimiser"), ["paralleloptimiser"]);
-	});
-
-	test("returns a single query when <= 2 content tokens remain", () => {
-		// Two content tokens ("search", "api") after stopwords removed.
-		assert.deepEqual(buildSearchQueriesFromObjective("the search api"), ["search api"]);
-	});
-
-	test("expands 3 content tokens into full + first/second-half queries", () => {
-		assert.deepEqual(buildSearchQueriesFromObjective("parallel search query"), [
-			"parallel search query",
-			"parallel search",
-			"search query",
-		]);
-	});
-
-	test("expands 4 content tokens into three diverse queries", () => {
-		assert.deepEqual(buildSearchQueriesFromObjective("parallel search api documentation"), [
-			"parallel search api documentation",
-			"parallel search",
-			"api documentation",
-		]);
-	});
-
-	test("strips common stopwords before expanding", () => {
-		// "how", "do", "i", "the" are stopwords; content tokens are 3.
-		assert.deepEqual(buildSearchQueriesFromObjective("How do I query the parallel API"), [
-			"query parallel api",
-			"query parallel",
-			"parallel api",
-		]);
-	});
-
-	test("falls back to raw tokens when every token is a stopword", () => {
-		// Raw tokens (3) still subdivide like any 3-token objective.
-		assert.deepEqual(buildSearchQueriesFromObjective("the and of"), [
-			"the and of",
-			"the and",
-			"and of",
-		]);
-	});
-
-	test("never returns more than 3 queries", () => {
-		const longObjective = "parallel web search api documentation examples tutorial guide";
-		const queries = buildSearchQueriesFromObjective(longObjective);
-		assert.ok(queries.length <= 3, `expected <= 3, got ${queries.length}`);
-		assert.ok(queries.length >= 1);
-		// All queries are distinct.
-		assert.equal(new Set(queries).size, queries.length);
-	});
-
-	test("normalizes case and punctuation", () => {
-		assert.deepEqual(
-			buildSearchQueriesFromObjective("Parallel, SEARCH! query?"),
-			["parallel search query", "parallel search", "search query"],
-		);
-	});
-});
-
-describe("searchWithParallel inlineContent", () => {
-	test("omits inlineContent entirely when no results carry excerpt content", async () => {
-		const home = await createTempHome();
-		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
-		const response = {
-			results: [
-				{ url: "https://example.test/a", title: "A", excerpts: [] },
-				{ url: "https://example.test/b", title: "B", excerpts: ["   "] },
-			],
-		};
-		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response }])}
-const result = await searchWithParallel("parallel search query");
-console.log(JSON.stringify({ inlineContent: result.inlineContent ?? null, resultsLen: result.results.length }));
-`);
-		assertChildSuccess(child);
-		const parsed = JSON.parse(child.stdout.trim());
-		assert.equal(parsed.inlineContent, null);
-		assert.equal(parsed.resultsLen, 2);
-	});
-
-	test("drops URL-less results from inlineContent but keeps content-bearing ones", async () => {
-		const home = await createTempHome();
-		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
-		const response = {
-			results: [
-				{ url: "https://example.test/has", title: "Has", excerpts: ["real content"] },
-				{ url: "", title: "NoURL", excerpts: ["dropped"] },
-				{ url: "https://example.test/empty", title: "Empty", excerpts: [] },
-			],
-		};
-		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response }])}
-const result = await searchWithParallel("parallel search query");
-console.log(JSON.stringify({ inlineContent: result.inlineContent ?? null }));
-`);
-		assertChildSuccess(child);
-		const parsed = JSON.parse(child.stdout.trim());
-		assert.deepEqual(
-			parsed.inlineContent.map((c) => ({ url: c.url, content: c.content, error: c.error })),
-			[{ url: "https://example.test/has", content: "real content", error: null }],
-		);
-	});
-
-	test("uses empty title string when a result has no title", async () => {
-		const home = await createTempHome();
-		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
-		const response = { results: [{ url: "https://example.test/x", excerpts: ["content here"] }] };
-		const child = runSearch(home, `
-${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/search", response }])}
-const result = await searchWithParallel("parallel search query");
-console.log(JSON.stringify({ title: result.inlineContent?.[0]?.title ?? null }));
-`);
-		assertChildSuccess(child);
-		assert.equal(JSON.parse(child.stdout.trim()).title, "");
 	});
 });
 

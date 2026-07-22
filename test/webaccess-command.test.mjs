@@ -42,6 +42,7 @@ const {
 	validateApiKey,
 	validateBaseUrl,
 	validateClearableModel,
+	validateParallelEffort,
 	handleWebAccessCommand,
 	formatWebAccessSummary,
 	formatWebAccessHelp,
@@ -309,7 +310,7 @@ test("unknown field returns help, does not write", () => {
 test("SET_FIELDS covers all documented set targets", () => {
 	assert.deepEqual([...SET_FIELDS], [
 		"provider", "workflow", "provider-priority", "allow-curator", "allow-browser-cookies", "search-model", "curator-timeout", "ssrf-trust-env-proxy", "ssrf-allow-ranges",
-		"openai-base-url", "openai-search-model", "perplexity-base-url", "perplexity-model",
+		"openai-base-url", "openai-search-model", "parallel-reasoning-effort", "perplexity-base-url", "perplexity-model",
 	]);
 });
 
@@ -372,6 +373,49 @@ test("perplexity-model + perplexity-base-url set round-trip through config", () 
 		assert.equal(readConfig(home).perplexityModel, "perplexity/sonar-pro");
 		r = handleWebAccessCommand("perplexity-base-url https://gw.example.com");
 		assert.equal(readConfig(home).perplexityBaseUrl, "https://gw.example.com");
+	} finally { cleanup(home); }
+});
+
+test("parallel-reasoning-effort set writes + rejects invalid tiers", () => {
+	const home = isolate();
+	try {
+		let r = handleWebAccessCommand("parallel-reasoning-effort medium");
+		assert.equal(r.wrote, true);
+		assert.equal(readConfig(home).parallelReasoningEffort, "medium");
+		// all three tiers accepted
+		for (const v of ["low", "medium", "high"]) {
+			handleWebAccessCommand(`parallel-reasoning-effort ${v}`);
+			assert.equal(readConfig(home).parallelReasoningEffort, v);
+		}
+		// bogus tier rejected without writing
+		const before = readConfig(home).parallelReasoningEffort;
+		r = handleWebAccessCommand("parallel-reasoning-effort bogus");
+		assert.equal(r.wrote, false);
+		assert.match(r.text, /low.*medium.*high|low.*medium.*high/i);
+		assert.equal(readConfig(home).parallelReasoningEffort, before);
+	} finally { cleanup(home); }
+});
+
+test("validateParallelEffort accepts low/medium/high (case-insensitive), rejects others", () => {
+	for (const ok of ["low", "medium", "high", "LOW", "Medium"]) {
+		const r = validateParallelEffort(ok);
+		assert.equal(r.ok, true, `expected ok for ${ok}`);
+		assert.equal(r.value, ok.toLowerCase());
+	}
+	for (const bad of ["", "bogus", "fast", "none", "  "]) {
+		const r = validateParallelEffort(bad);
+		assert.equal(r.ok, false, `expected rejection for ${JSON.stringify(bad)}`);
+	}
+});
+
+test("formatWebAccessSummary includes the parallel reasoning effort line", () => {
+	const home = isolate();
+	try {
+		let text = formatWebAccessSummary();
+		assert.match(text, /parallel reasoning effort: _\(default\)_/);
+		handleWebAccessCommand("parallel-reasoning-effort high");
+		text = formatWebAccessSummary();
+		assert.match(text, /parallel reasoning effort: `high` _\(config\)_/);
 	} finally { cleanup(home); }
 });
 

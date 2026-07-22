@@ -10,6 +10,7 @@ All config lives in `web-search.json`, resolved with XDG precedence: `$PI_CODING
   "perplexityApiKey": "pplx-...",
   "geminiApiKey": "AIza...",
   "parallelApiKey": "parallel-key...",
+  "parallelReasoningEffort": "low",
   "searxngBaseUrl": "https://search.example.com",
   "firecrawlBaseUrl": "http://localhost:3002",
   "firecrawlApiKey": "fc-...",
@@ -58,7 +59,7 @@ All config lives in `web-search.json`, resolved with XDG precedence: `$PI_CODING
 }
 ```
 
-`EXA_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `PARALLEL_API_KEY`, `BRAVE_API_KEY`, `TAVILY_API_KEY`, `OLOSTEP_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_SEARCH_MODEL`, `PERPLEXITY_BASE_URL`, `PERPLEXITY_MODEL`, `SEARXNG_BASE_URL`, `FIRECRAWL_BASE_URL`, `FIRECRAWL_API_KEY`, `FIRECRAWL_BASIC_AUTH`, `GOOGLE_GEMINI_BASE_URL`, and `CLOUDFLARE_API_KEY` env vars take precedence over config file values. `FIRECRAWL_BASIC_AUTH` is the raw `user:pass` for HTTP Basic auth against a reverse-proxied Firecrawl instance (the extension base64-encodes it). `GOOGLE_GEMINI_BASE_URL` overrides the Gemini API host for all Gemini calls (search, URL context, video) — set it to a bare host with no trailing slash and no version segment (e.g. `https://my-gateway.example.com/gemini`), matching the [official Gemini CLI convention](https://www.geminicli.com/docs/reference/configuration). `geminiBaseUrl` in config is the equivalent file-based override. When the configured host…
+`EXA_API_KEY`, `GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `PARALLEL_API_KEY`, `PARALLEL_REASONING_EFFORT`, `BRAVE_API_KEY`, `TAVILY_API_KEY`, `OLOSTEP_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_SEARCH_MODEL`, `PERPLEXITY_BASE_URL`, `PERPLEXITY_MODEL`, `SEARXNG_BASE_URL`, `FIRECRAWL_BASE_URL`, `FIRECRAWL_API_KEY`, `FIRECRAWL_BASIC_AUTH`, `GOOGLE_GEMINI_BASE_URL`, and `CLOUDFLARE_API_KEY` env vars take precedence over config file values. `PARALLEL_REASONING_EFFORT` selects the Parallel Responses-API reasoning tier (`low` | `medium` | `high`; defaults to `low` for snappy agent-facing search — the API itself defaults to `medium`). `FIRECRAWL_BASIC_AUTH` is the raw `user:pass` for HTTP Basic auth against a reverse-proxied Firecrawl instance (the extension base64-encodes it). `GOOGLE_GEMINI_BASE_URL` overrides the Gemini API host for all Gemini calls (search, URL context, video) — set it to a bare host with no trailing slash and no version segment (e.g. `https://my-gateway.e
 
 ## Shortcuts
 

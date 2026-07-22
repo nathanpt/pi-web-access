@@ -24,6 +24,7 @@ Inspect or update the extension's config without hand-editing `~/.pi/web-search.
 /webaccess openai-search-model azure/openai/gpt-5.5       # gateway model id ('' or 'none' to clear)
 /webaccess perplexity-base-url https://gw.example.com     # route Perplexity through a gateway ('' or 'none' to clear)
 /webaccess perplexity-model sonar-pro                     # gateway model id ('' or 'none' to clear)
+/webaccess parallel-reasoning-effort low                  # Parallel Responses-API reasoning tier (low|medium|high; default low)
 /webaccess test-key parallel                             # dry-run a real search to confirm the configured key works
 /webaccess test-key parallel sk-candidate-1234           # test a candidate key without saving it
 /webaccess export                                        # print config as JSON (secrets redacted)
