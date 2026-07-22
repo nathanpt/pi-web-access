@@ -71,9 +71,6 @@ globalThis.__getCalls = () => __calls;
 const perplexityOkResponse = {
 	id: "x", model: "m", choices: [{ message: { content: "Mocked Perplexity answer." } }], citations: ["https://example.test/source"],
 };
-const parallelOkResponse = {
-	answer: "Parallel answer.", results: [{ title: "P", url: "https://p.example", snippet: "" }],
-};
 
 describe("search() provider trace", () => {
 	test("explicit provider success: trace has one success attempt, mode=provider, selected set", async () => {

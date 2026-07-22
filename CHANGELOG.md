@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-21
+
+**Parallel search migrates to the Responses API.** Parallel's flagship for grounded Q&A is now the OpenAI-Responses-compatible `POST /v1/responses` endpoint (synthesized answer annotated with `url_citation` sources — the same wire format OpenAI's Responses API uses), and the documented "Migrate from OpenAI" target. `provider: "parallel"` switches its *search* path onto it. Fork-original (no upstream PR — upstream still ships the legacy `/v1/search`).
+
+### Changed (behavior)
+- **`provider: "parallel"` search now calls the Parallel Responses API** (`POST https://api.parallel.ai/v1/responses`). Auth moved from `x-api-key` to `Authorization: Bearer <key>`; the request body is now `{ model: "parallel", input, reasoning: { effort } }` (plus an optional `instructions` string weaving domain/recency/count hints — Parallel has no tool config, so all search hints live there; grounding is automatic, so no `tools`/`web_search` entry is sent). The response is parsed from the `output[]` items: the synthesized answer is the concatenated `message` → `output_text` text, and `results` are the `url_citation` annotations (deduped by URL, capped at `numResults`, with a snippet derived from each annotation's `[start_index, end_index]` span). A dedicated 90s search-timeout signal (`SEARCH_TIMEOUT_MS`) gives headroom for `reasoning.effort: "high"`; `extractWithParallel` keeps its existing 60s signal.
+- **`extractWithParallel` (`/v1/extract`) is unchanged** — the extract endpoint (including its `MIN_USEFUL_CONTENT` gate) still serves the `fetch_content` fallback chain as before.
+
+**Migration:** the 0.16.0 Parallel `buildSearchQueriesFromObjective` query-expansion and the search-path `inlineContent` are **superseded**. The Responses API performs its own multi-step research and returns citations (not excerpts), so Parallel no longer contributes search-path `inlineContent` to the curator — the curator still fetches primary sources independently via `fetch_content`/extract, and every other provider that returns inline content (Exa, Gemini, Tavily, ...) continues to contribute it. The provider name, config key (`parallelApiKey` / `PARALLEL_API_KEY`), opt-in status, and routing are all unchanged — only the search request/response shape changed. If you wrapped or asserted on the old `/v1/search` body (`objective`, `search_queries`, `mode: "basic"`, `advanced_settings.source_policy`, `max_chars_total`) or the `inlineContent` field, update those to the Responses shape.
+
+### Added
+- **`reasoning.effort` control for the Parallel search provider.** Defaults to `low` (~5–10s) for snappy agent-facing `web_search` — the API itself defaults to `medium`, but `low` keeps the agent-responsive latency the legacy `/v1/search` had. Override via the `PARALLEL_REASONING_EFFORT` env var or the `parallelReasoningEffort` config key (`low` | `medium` | `high`; any other value falls back to `low`; `high` can reach ~60s per the docs). Exposed on the `/webaccess` surface: a new `parallel-reasoning-effort` set-field (`/webaccess parallel-reasoning-effort <low|medium|high>`, validated), a `parallel reasoning effort` line in the summary's **Endpoint overrides** section (provenance-only — the tier is not a secret), and a `/webaccess parallel-reasoning-effort` line on the help page. Matches the `openaiSearchModel` / `OPENAI_SEARCH_MODEL` precedence pattern.
+
 ## [0.18.0] - 2026-07-19
 
 ### Added

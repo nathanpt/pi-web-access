@@ -90,6 +90,15 @@ export function validateSearchModel(value: string): ValidationResult {
 	return { ok: true, value: normalized };
 }
 
+/** Validate a Parallel reasoning-effort tier for `/webaccess parallel-reasoning-effort <value>`. */
+export function validateParallelEffort(value: string): ValidationResult {
+	const normalized = value.trim().toLowerCase();
+	if (normalized === "low" || normalized === "medium" || normalized === "high") {
+		return { ok: true, value: normalized };
+	}
+	return { ok: false, error: `invalid value \`${value}\`. Use one of: \`low\`, \`medium\`, \`high\`.` };
+}
+
 /** Validate a clearable model-id field for gateway routing (`''`/`none`/`clear`
  * → clear, i.e. restore the provider default). Otherwise a non-empty string
  * with no whitespace (gateway model ids may contain `/`, e.g. `provider/model`). */
@@ -178,6 +187,7 @@ export const SET_FIELDS = [
 	"ssrf-allow-ranges",
 	"openai-base-url",
 	"openai-search-model",
+	"parallel-reasoning-effort",
 	"perplexity-base-url",
 	"perplexity-model",
 ] as const;
@@ -258,6 +268,7 @@ export function formatWebAccessSummary(): string {
 	lines.push(gatewayOverrideLine("openai model", normalizeApiKey(process.env.OPENAI_SEARCH_MODEL), normalizeApiKey(gwCfg.openaiSearchModel)));
 	lines.push(gatewayOverrideLine("perplexity base url", normalizeBaseUrl(process.env.PERPLEXITY_BASE_URL), normalizeBaseUrl(gwCfg.perplexityBaseUrl)));
 	lines.push(gatewayOverrideLine("perplexity model", normalizeApiKey(process.env.PERPLEXITY_MODEL), normalizeApiKey(gwCfg.perplexityModel)));
+	lines.push(gatewayOverrideLine("parallel reasoning effort", normalizeApiKey(process.env.PARALLEL_REASONING_EFFORT), normalizeApiKey(gwCfg.parallelReasoningEffort)));
 	lines.push("");
 	lines.push("**Browser cookies**");
 	lines.push(`- allow browser cookies: ${boolLabel(eff.allowBrowserCookies)} _(${provenanceLabel(eff.browserCookieProvenance)})_`);
@@ -268,7 +279,7 @@ export function formatWebAccessSummary(): string {
 	lines.push(`- allow ranges: ${eff.ssrf.allowRanges.length ? eff.ssrf.allowRanges.map((r) => `\`${r}\``).join(", ") : "_(none)_"}`);
 	lines.push("");
 	lines.push("_Use `/webaccess <field> <value>` to change a setting. Fields: " +
-		"provider, workflow, provider-priority, allow-browser-cookies, search-model, curator-timeout, ssrf-trust-env-proxy, ssrf-allow-ranges, openai-base-url, openai-search-model, perplexity-base-url, perplexity-model. " +
+		"provider, workflow, provider-priority, allow-browser-cookies, search-model, curator-timeout, ssrf-trust-env-proxy, ssrf-allow-ranges, openai-base-url, openai-search-model, parallel-reasoning-effort, perplexity-base-url, perplexity-model. " +
 		"Set an API key with `/webaccess set-key <provider> <key>`._");
 
 	return lines.join("\n");
@@ -309,6 +320,7 @@ export function formatWebAccessHelp(): string {
 	lines.push("# endpoint overrides (gateway routing — OpenAI-compatible)");
 	lines.push("/webaccess openai-base-url <url>                             # '' or 'none' to clear. e.g. https://my-gateway.example.com/v1");
 	lines.push("/webaccess openai-search-model <model-id>                    # gateway model id (e.g. azure/openai/gpt-5.5)");
+	lines.push("/webaccess parallel-reasoning-effort <low|medium|high>      # Responses-API reasoning tier (default low)");
 	lines.push("/webaccess perplexity-base-url <url>                         # '' or 'none' to clear");
 	lines.push("/webaccess perplexity-model <model-id>                       # gateway model id");
 	lines.push("");
@@ -613,6 +625,10 @@ export function handleWebAccessCommand(args: string): WebAccessResult {
 		case "openai-search-model":
 			result = validateClearableModel(rawValue, field);
 			configUpdate = result.ok ? { openaiSearchModel: result.value } : {};
+			break;
+		case "parallel-reasoning-effort":
+			result = validateParallelEffort(rawValue);
+			configUpdate = result.ok ? { parallelReasoningEffort: result.value } : {};
 			break;
 		case "perplexity-base-url":
 			result = validateBaseUrl(rawValue, field);

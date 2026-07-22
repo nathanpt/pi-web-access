@@ -1,30 +1,28 @@
 import { getWebSearchConfigPath } from "../utils.js";
 import { loadWebSearchConfig, normalizeApiKey } from "../config.js";
 import { activityMonitor } from "../activity.js";
-import type { SearchOptions, SearchResponse } from "./perplexity.js";
+import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.js";
 import type { ExtractedContent } from "../extract.js";
 
-const PARALLEL_API_URL = "https://api.parallel.ai/v1/search";
+// Parallel's OpenAI-Responses-compatible endpoint (v0.19.0 cutover from the
+// legacy /v1/search). Returns a synthesized answer grounded in live web
+// research + `url_citation` annotations — the same wire format OpenAI's
+// Responses API uses. Auth is `Authorization: Bearer <key>`, grounding is
+// automatic (no tools/web_search entry sent).
+const PARALLEL_RESPONSES_URL = "https://api.parallel.ai/v1/responses";
 const PARALLEL_EXTRACT_URL = "https://api.parallel.ai/v1/extract";
-// Explicit excerpt budget so synthesized search answers have enough context.
-const SEARCH_MAX_CHARS_TOTAL = 40000;
+// Headroom for `reasoning.effort: "high"` (can reach ~60s per the docs); the
+// default `low`/`medium` tiers finish well under this. The extract endpoint
+// keeps its own shorter signal (`requestSignal`, 60s) below.
+const SEARCH_TIMEOUT_MS = 90_000;
+// Default reasoning effort for agent-facing web_search — snappy (~5–10s).
+// Override via PARALLEL_REASONING_EFFORT / parallelReasoningEffort. The API
+// itself defaults to `medium`; we prefer `low` for latency.
+const DEFAULT_PARALLEL_EFFORT = "low";
 // Reject extracts shorter than this — they're almost always junk (nav bars,
 // cookie banners, error stubs) and would just pollute the fallback chain.
 const MIN_USEFUL_CONTENT = 100;
 const CONFIG_PATH = getWebSearchConfigPath();
-
-// Common English stopwords dropped so an objective is turned into concise
-// keyword queries (the Parallel `basic` mode is tuned for 2–3 such queries,
-// per the API docs) rather than echoed verbatim.
-const STOP_WORDS = new Set([
-	"a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from",
-	"has", "have", "how", "i", "in", "is", "it", "its", "of", "on", "or",
-	"that", "the", "their", "there", "this", "to", "was", "were", "what",
-	"when", "where", "which", "who", "why", "will", "with", "you", "your",
-	"me", "my", "we", "our", "us", "do", "does", "did", "can", "could",
-	"would", "should", "find", "get", "getting", "about", "into", "than",
-	"then", "them", "these", "those", "also", "any", "all", "if", "so",
-]);
 
 function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
@@ -48,11 +46,29 @@ function getApiKey(): string {
 	return key;
 }
 
+/** Effective reasoning effort: env (`PARALLEL_REASONING_EFFORT`) > config
+ * (`parallelReasoningEffort`) > default `low`. Any value other than `medium`/
+ * `high` falls back to `low` (this extension's default tier). Mirrors the
+ * `getOpenAISearchModel` precedence pattern. */
+function getParallelEffort(): "low" | "medium" | "high" {
+	const raw = normalizeApiKey(process.env.PARALLEL_REASONING_EFFORT)
+		?? normalizeApiKey(loadWebSearchConfig().parallelReasoningEffort)
+		?? DEFAULT_PARALLEL_EFFORT;
+	return raw === "medium" || raw === "high" ? raw : "low";
+}
+
 export function isParallelAvailable(): boolean {
 	const config = loadWebSearchConfig();
 	return !!(normalizeApiKey(process.env.PARALLEL_API_KEY) ?? normalizeApiKey(config.parallelApiKey));
 }
 
+/** Abort signal for the search path — 90s headroom for `high` effort. */
+function searchRequestSignal(signal?: AbortSignal): AbortSignal {
+	const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
+	return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
+/** Abort signal for the extract path — 60s (unchanged). */
 function requestSignal(signal?: AbortSignal): AbortSignal {
 	const timeout = AbortSignal.timeout(60000);
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -73,6 +89,8 @@ function mapDomainFilter(domainFilter: string[] | undefined): { includeDomains?:
 	};
 }
 
+/** Start date (YYYY-MM-DD) for a recency filter. Reused by `buildInstructions`
+ * to derive the "last N days" phrasing from the offset. */
 function recencyToStartDate(filter: string): string {
 	const now = new Date();
 	const offsets: Record<string, number> = {
@@ -85,141 +103,132 @@ function recencyToStartDate(filter: string): string {
 	return new Date(now.getTime() - days * 86400000).toISOString().slice(0, 10);
 }
 
-interface ParallelSearchResult {
-	url: string;
-	title?: string | null;
-	publish_date?: string | null;
-	excerpts?: string[];
+/** Weave domain/recency/count hints into the Responses-API `instructions`
+ * field. Parallel has no tool config (grounding is automatic), so ALL search
+ * hints live here. Returns "" when no hints are present so `instructions` is
+ * omitted from the request body entirely. Structure mirrors
+ * `openai-search.ts`'s `buildInstructions`. */
+function buildInstructions(options: SearchOptions): string {
+	const hints: string[] = [];
+	if (options.recencyFilter) {
+		// Derive "within the last N days" from the offset (week -> 7 days, etc.)
+		// via the shared recencyToStartDate helper.
+		const start = recencyToStartDate(options.recencyFilter);
+		const startMs = Date.parse(`${start}T00:00:00Z`);
+		if (Number.isFinite(startMs)) {
+			const days = Math.max(1, Math.round((Date.now() - startMs) / 86400000));
+			hints.push(`Prefer sources published within the last ${days} days.`);
+		}
+	}
+	const domainFilters = mapDomainFilter(options.domainFilter);
+	if (domainFilters.includeDomains?.length) hints.push(`Focus on these domains: ${domainFilters.includeDomains.join(", ")}.`);
+	if (domainFilters.excludeDomains?.length) hints.push(`Exclude these domains: ${domainFilters.excludeDomains.join(", ")}.`);
+	if (typeof options.numResults === "number" && Number.isFinite(options.numResults) && options.numResults > 0) {
+		hints.push(`Cite up to ${Math.min(Math.floor(options.numResults), 20)} distinct sources.`);
+	}
+	if (hints.length === 0) return "";
+	return `Answer the user's query using current web sources. ${hints.join(" ")}`;
 }
 
-interface ParallelSearchResponse {
-	search_id?: string;
-	results?: ParallelSearchResult[];
-	warnings?: Array<{ type?: string; message?: string }> | null;
+/** Extract a snippet window around an annotation's text span (mirrors
+ * `openai-search.ts`'s helper). Falls back to "" when indices are unusable. */
+function extractSnippetAround(text: string, start: unknown, end: unknown): string {
+	if (typeof start !== "number" || typeof end !== "number" || !text) return "";
+	const before = Math.max(0, start - 100);
+	const after = Math.min(text.length, end + 100);
+	const snippet = text.slice(before, after).replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").trim();
+	return snippet.length > 300 ? `${snippet.slice(0, 297)}...` : snippet;
 }
 
-/** Keep only non-empty string excerpts; tolerate non-array / mixed input from the API. */
-function nonEmptyExcerpts(excerpts: unknown): string[] {
-	if (!Array.isArray(excerpts)) return [];
-	return excerpts.filter((e): e is string => typeof e === "string" && e.trim().length > 0);
+/** Concatenate all message-part text as the synthesized answer. Tolerates
+ * non-array `content` / missing text. */
+function extractAnswer(output: unknown[]): string {
+	const parts: string[] = [];
+	for (const item of output) {
+		if (!item || typeof item !== "object" || (item as { type?: unknown }).type !== "message") continue;
+		const content = (item as { content?: unknown }).content;
+		if (!Array.isArray(content)) continue;
+		for (const part of content) {
+			if (!part || typeof part !== "object") continue;
+			const text = (part as { text?: unknown }).text;
+			if (typeof text === "string" && text.trim().length > 0) parts.push(text);
+		}
+	}
+	return parts.join("\n").trim();
 }
 
-/** Lowercase alphanumeric tokens from arbitrary text. */
-function tokenize(text: string): string[] {
-	return text.toLowerCase().split(/[^a-z0-9]+/i).filter(Boolean);
+/** Pull `url_citation` annotations out of the message output items (SINGLE
+ * pass — Parallel returns citations only as annotations, no `web_search_call`
+ * items unlike OpenAI). Dedupes by URL and caps at `cap`. */
+function extractCitations(output: unknown[], cap: number): SearchResult[] {
+	const results: SearchResult[] = [];
+	if (cap <= 0) return results;
+	const seen = new Set<string>();
+	for (const item of output) {
+		if (!item || typeof item !== "object" || (item as { type?: unknown }).type !== "message") continue;
+		const content = (item as { content?: unknown }).content;
+		if (!Array.isArray(content)) continue;
+		for (const part of content) {
+			if (!part || typeof part !== "object") continue;
+			const text = typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : "";
+			const annotations = (part as { annotations?: unknown }).annotations;
+			if (!Array.isArray(annotations)) continue;
+			for (const annotation of annotations) {
+				if (!annotation || typeof annotation !== "object" || (annotation as { type?: unknown }).type !== "url_citation") continue;
+				const url = (annotation as { url?: unknown }).url;
+				if (typeof url !== "string" || url.trim().length === 0) continue;
+				if (seen.has(url)) continue;
+				seen.add(url);
+				const title = (annotation as { title?: unknown }).title;
+				results.push({
+					title: typeof title === "string" && title.trim().length > 0 ? title : url,
+					url,
+					snippet: extractSnippetAround(text, (annotation as { start_index?: unknown }).start_index, (annotation as { end_index?: unknown }).end_index),
+				});
+				if (results.length >= cap) return results;
+			}
+		}
+	}
+	return results;
 }
 
 /**
- * Turn a natural-language objective into 2–3 concise, diverse keyword queries.
+ * Search via the Parallel Responses API (`POST /v1/responses`). Returns a
+ * synthesized answer grounded in live web research, with `url_citation`
+ * sources as `results` — the same wire format OpenAI's Responses API uses.
  *
- * The Parallel `basic` search mode is documented to work best with 2–3
- * high-quality keyword queries rather than a single echoed phrase. We drop
- * stopwords, then emit the full keyword phrase plus first/second-half subsets
- * so the API recalls different pages per query instead of one redundant pass.
+ * - Auth: `Authorization: Bearer <key>` (NOT the legacy `x-api-key`).
+ * - Grounding is automatic — no `tools`/`web_search` entry is sent.
+ * - `reasoning.effort` defaults to `low` for latency; override via
+ *   `PARALLEL_REASONING_EFFORT` / `parallelReasoningEffort`.
  *
- * Returns 1 query when the objective is too short to subdivide, and `[]` when
- * it is blank. Pure + deterministic so it is unit-testable in isolation.
+ * No `inlineContent` is populated (Responses returns citations, not excerpts);
+ * the curator fetches primary sources independently via `fetch_content`.
  */
-export function buildSearchQueriesFromObjective(objective: string): string[] {
-	const trimmed = objective.trim();
-	if (!trimmed) return [];
-
-	const tokens = tokenize(trimmed).filter(t => !STOP_WORDS.has(t));
-	// If every token was a stopword, fall back to the raw tokens so we still
-	// return something usable (e.g. objective "the and of").
-	const base = tokens.length > 0 ? tokens : tokenize(trimmed);
-	if (base.length === 0) return [];
-	if (base.length <= 2) return [base.join(" ")];
-
-	const queries: string[] = [base.join(" ")];
-
-	const firstHalf = base.slice(0, Math.ceil(base.length / 2));
-	if (firstHalf.length >= 2) queries.push(firstHalf.join(" "));
-
-	const secondHalf = base.slice(Math.floor(base.length / 2));
-	if (secondHalf.length >= 2) queries.push(secondHalf.join(" "));
-
-	// Dedupe (preserving order) and cap at 3.
-	return [...new Set(queries)].slice(0, 3);
-}
-
-function buildAnswerFromResults(results: ParallelSearchResult[]): string {
-	return results
-		.map((item, index) => {
-			if (!item?.url) return null;
-			const content = nonEmptyExcerpts(item.excerpts).join(" ").trim();
-			if (!content) return null;
-			const sourceTitle = item.title || `Source ${index + 1}`;
-			return `${content}\nSource: ${sourceTitle} (${item.url})`;
-		})
-		.filter((part): part is string => part !== null)
-		.join("\n\n");
-}
-
-/**
- * Surface each result's excerpt content as structured inline content (a peer
- * to Exa/Gemini), so the consuming model sees per-source text instead of only
- * the synthesized `answer`. The Parallel search API returns excerpts (not full
- * page text — that's the extract endpoint's job), so the content here is the
- * joined excerpts per URL. Results without usable excerpt text are dropped.
- */
-function mapInlineContent(results: ParallelSearchResult[]): ExtractedContent[] {
-	if (!Array.isArray(results)) return [];
-	return results
-		.filter((r): r is ParallelSearchResult & { url: string } => typeof r?.url === "string" && r.url.length > 0)
-		.map(r => {
-			const content = nonEmptyExcerpts(r.excerpts).join(" ").trim();
-			return {
-				url: r.url,
-				title: typeof r.title === "string" && r.title.trim() ? r.title.trim() : "",
-				content,
-				error: null,
-			};
-		})
-		.filter(item => item.content.length > 0);
-}
-
 export async function searchWithParallel(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = getApiKey();
 	const numResults = Math.min(options.numResults ?? 5, 20);
+	const instructions = buildInstructions(options);
 
-	const advancedSettings: Record<string, unknown> = { max_results: numResults };
-
-	const sourcePolicy: Record<string, unknown> = {};
-	const domainFilters = mapDomainFilter(options.domainFilter);
-	if (domainFilters.includeDomains) sourcePolicy.include_domains = domainFilters.includeDomains;
-	if (domainFilters.excludeDomains) sourcePolicy.exclude_domains = domainFilters.excludeDomains;
-	if (options.recencyFilter) {
-		sourcePolicy.after_date = recencyToStartDate(options.recencyFilter);
-	}
-	if (Object.keys(sourcePolicy).length > 0) {
-		advancedSettings.source_policy = sourcePolicy;
-	}
-
-	const searchQueries = buildSearchQueriesFromObjective(query);
 	const requestBody: Record<string, unknown> = {
-		objective: query,
-		// `basic` mode is documented to work best with 2–3 keyword queries;
-		// buildSearchQueriesFromObjective derives those from the objective.
-		// Fall back to the raw query if expansion produced nothing (blank input).
-		search_queries: searchQueries.length > 0 ? searchQueries : [query],
-		mode: "basic",
-		max_chars_total: SEARCH_MAX_CHARS_TOTAL,
-		advanced_settings: advancedSettings,
+		model: "parallel",
+		input: query,
+		reasoning: { effort: getParallelEffort() },
 	};
+	if (instructions) requestBody.instructions = instructions;
 
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	let response: Response;
 	try {
-		response = await fetch(PARALLEL_API_URL, {
+		response = await fetch(PARALLEL_RESPONSES_URL, {
 			method: "POST",
 			headers: {
-				"x-api-key": apiKey,
+				Authorization: `Bearer ${apiKey}`,
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(requestBody),
-			signal: requestSignal(options.signal),
+			signal: searchRequestSignal(options.signal),
 		});
 	} catch (err) {
 		if (isAbortError(err)) activityMonitor.logComplete(activityId, 0);
@@ -233,9 +242,9 @@ export async function searchWithParallel(query: string, options: SearchOptions =
 		throw new Error(`Parallel API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	let data: ParallelSearchResponse;
+	let parsed: Record<string, unknown>;
 	try {
-		data = await response.json() as ParallelSearchResponse;
+		parsed = await response.json() as Record<string, unknown>;
 	} catch (err) {
 		activityMonitor.logComplete(activityId, response.status);
 		throw new Error(`Parallel API returned invalid JSON: ${errorMessage(err)}`);
@@ -243,19 +252,10 @@ export async function searchWithParallel(query: string, options: SearchOptions =
 
 	activityMonitor.logComplete(activityId, response.status);
 
-	const results = Array.isArray(data.results) ? data.results : [];
-	const mapped = results.map((item, index) => ({
-		title: item?.title || `Source ${index + 1}`,
-		url: item?.url || "",
-		snippet: nonEmptyExcerpts(item?.excerpts).join(" ").trim().slice(0, 1000),
-	})).filter(item => item.url.length > 0);
-
-	const searchResponse: SearchResponse = {
-		answer: buildAnswerFromResults(results),
-		results: mapped,
-	};
-	const inlineContent = mapInlineContent(results);
-	if (inlineContent.length > 0) searchResponse.inlineContent = inlineContent;
+	const output = Array.isArray(parsed.output) ? parsed.output : [];
+	const answer = extractAnswer(output);
+	const results = extractCitations(output, numResults);
+	const searchResponse: SearchResponse = { answer, results };
 	return searchResponse;
 }
 
@@ -284,6 +284,12 @@ function deriveTitle(url: string, fallback?: string | null): string {
 	} catch {
 		return url;
 	}
+}
+
+/** Keep only non-empty string excerpts; tolerate non-array / mixed input from the API. */
+function nonEmptyExcerpts(excerpts: unknown): string[] {
+	if (!Array.isArray(excerpts)) return [];
+	return excerpts.filter((e): e is string => typeof e === "string" && e.trim().length > 0);
 }
 
 /**
