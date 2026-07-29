@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Parallel search recency hint is now deterministic (green CI).** Fork-local regression introduced by the v0.19.0 Parallel Responses-API migration. `buildInstructions` (`providers/parallel.ts`) derived the "within the last N days" hint by round-tripping through a UTC-truncated timestamp (`recencyToStartDate("week")` → `toISOString().slice(0,10)` → re-parse at `T00:00:00Z`), so the local-vs-UTC date boundary made `now − 7d` round to **8** at certain wall-clock times in UTC-negative zones — flaking the `test/parallel.test.mjs` assertion (`recencyFilter:"week"` → "7 days") and leaving `npm test` red. The day count now comes from a direct offset table (`day:1, week:7, month:30, year:365`), with no `Date.now()`/`new Date()` left in the path, so it cannot vary by time of day. The now-dead `recencyToStartDate` helper (its only caller was the round-trip it enabled) is deleted; Exa's own independent `recencyToStartDate`, which feeds a real `startPublishedDate` request field, is untouched. A new four-filter sweep test pins the full day/week/month/year mapping. The wording of the hint (`"Prefer sources published within the last N days."`) is unchanged, so no string contract moved.
+
 ## [0.19.0] - 2026-07-21
 
 **Parallel search migrates to the Responses API.** Parallel's flagship for grounded Q&A is now the OpenAI-Responses-compatible `POST /v1/responses` endpoint (synthesized answer annotated with `url_citation` sources — the same wire format OpenAI's Responses API uses), and the documented "Migrate from OpenAI" target. `provider: "parallel"` switches its *search* path onto it. Fork-original (no upstream PR — upstream still ships the legacy `/v1/search`).

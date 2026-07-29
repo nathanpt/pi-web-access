@@ -89,20 +89,6 @@ function mapDomainFilter(domainFilter: string[] | undefined): { includeDomains?:
 	};
 }
 
-/** Start date (YYYY-MM-DD) for a recency filter. Reused by `buildInstructions`
- * to derive the "last N days" phrasing from the offset. */
-function recencyToStartDate(filter: string): string {
-	const now = new Date();
-	const offsets: Record<string, number> = {
-		day: 1,
-		week: 7,
-		month: 30,
-		year: 365,
-	};
-	const days = offsets[filter] ?? 0;
-	return new Date(now.getTime() - days * 86400000).toISOString().slice(0, 10);
-}
-
 /** Weave domain/recency/count hints into the Responses-API `instructions`
  * field. Parallel has no tool config (grounding is automatic), so ALL search
  * hints live here. Returns "" when no hints are present so `instructions` is
@@ -111,14 +97,18 @@ function recencyToStartDate(filter: string): string {
 function buildInstructions(options: SearchOptions): string {
 	const hints: string[] = [];
 	if (options.recencyFilter) {
-		// Derive "within the last N days" from the offset (week -> 7 days, etc.)
-		// via the shared recencyToStartDate helper.
-		const start = recencyToStartDate(options.recencyFilter);
-		const startMs = Date.parse(`${start}T00:00:00Z`);
-		if (Number.isFinite(startMs)) {
-			const days = Math.max(1, Math.round((Date.now() - startMs) / 86400000));
-			hints.push(`Prefer sources published within the last ${days} days.`);
-		}
+		// Deterministic day count per filter (week -> 7 days, etc.). The former
+		// date-truncated round-trip (`recencyToStartDate` + reparse) drifted by
+		// ±1 day depending on wall-clock time / UTC offset, which flaked the
+		// `recencyFilter:"week"` -> "7 days" assertion at some hours.
+		const recencyDays: Record<string, number> = {
+			day: 1,
+			week: 7,
+			month: 30,
+			year: 365,
+		};
+		const days = recencyDays[options.recencyFilter] ?? 0;
+		if (days > 0) hints.push(`Prefer sources published within the last ${days} days.`);
 	}
 	const domainFilters = mapDomainFilter(options.domainFilter);
 	if (domainFilters.includeDomains?.length) hints.push(`Focus on these domains: ${domainFilters.includeDomains.join(", ")}.`);
