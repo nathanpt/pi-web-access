@@ -377,6 +377,34 @@ console.log(JSON.stringify({ callBody: globalThis.__getParallelFetchCalls()[0]?.
 		assert.match(parsed.callBody.instructions, /Cite up to 10 distinct sources/);
 	});
 
+	test("maps each recencyFilter to its deterministic day count", async () => {
+		const home = await createTempHome();
+		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
+		const child = runSearch(home, `
+${buildFetchMockScript([{ urlMatch: "api.parallel.ai/v1/responses", response: { output: [] } }])}
+await searchWithParallel("day query", { recencyFilter: "day" });
+await searchWithParallel("week query", { recencyFilter: "week" });
+await searchWithParallel("month query", { recencyFilter: "month" });
+await searchWithParallel("year query", { recencyFilter: "year" });
+const calls = globalThis.__getParallelFetchCalls();
+console.log(JSON.stringify({
+	day: calls[0]?.body?.instructions ?? null,
+	week: calls[1]?.body?.instructions ?? null,
+	month: calls[2]?.body?.instructions ?? null,
+	year: calls[3]?.body?.instructions ?? null,
+}));
+`);
+		assertChildSuccess(child);
+		const parsed = JSON.parse(child.stdout.trim());
+		// Pin the deterministic day-count mapping (day=1, week=7, month=30,
+		// year=365). The former date-truncated round-trip drifted between 7
+		// and 8 days for "week" depending on wall-clock time, flaking CI.
+		assert.match(parsed.day, /within the last 1 days/);
+		assert.match(parsed.week, /within the last 7 days/);
+		assert.match(parsed.month, /within the last 30 days/);
+		assert.match(parsed.year, /within the last 365 days/);
+	});
+
 	test("omits instructions from the body when no filters are given", async () => {
 		const home = await createTempHome();
 		await writeWebSearchConfig(home, { parallelApiKey: "test-key" });
