@@ -204,9 +204,14 @@ async function searchWithGemini(
 
 export async function search(query: string, options: FullSearchOptions = {}): Promise<AttributedSearchResponse> {
 	const config = getSearchConfig();
-	const provider = options.provider ?? config.searchProvider;
+	// Treat an explicit "auto" like "no provider": a globally-configured
+	// concrete provider wins (fixes the `??` short-circuit that ignored config
+	// when the model emitted the "auto" schema default). `trace.mode` records
+	// the ORIGINAL request so observability still shows "auto".
+	const requested = options.provider ?? "auto";
+	const provider = requested === "auto" ? config.searchProvider : requested;
 	const attempts: ProviderAttempt[] = [];
-	const trace: SearchTrace = { mode: provider, selected: null, attempts };
+	const trace: SearchTrace = { mode: requested, selected: null, attempts };
 
 	if (provider === "perplexity") {
 		try {
