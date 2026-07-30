@@ -1,4 +1,7 @@
 node_modules/
 bun.lock
 AGENTS.md
+# harness-bootstrap / pi-onboard generated artifacts (not published)
+ARCHITECTURE.md
+PROGRESS.md
 .docs/
