@@ -1,5 +1,5 @@
 import { activityMonitor } from "../activity.js";
-import { getApiKey, getVersionedApiBase, buildKeyParam, buildAuthHeaders, isGatewayConfigured, DEFAULT_MODEL } from "./gemini-api.js";
+import { getApiKey, getVersionedApiBase, buildAuthHeaders, isGatewayConfigured, DEFAULT_MODEL } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { extractHeadingTitle, type ExtractedContent } from "../extract.js";
 
@@ -30,7 +30,7 @@ export async function extractWithUrlContext(
 			tools: [{ url_context: {} }],
 		};
 
-		const res = await fetch(`${getVersionedApiBase()}/models/${model}:generateContent${buildKeyParam(apiKey)}`, {
+		const res = await fetch(`${getVersionedApiBase()}/models/${model}:generateContent`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
 			body: JSON.stringify(body),

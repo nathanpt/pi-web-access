@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve, extname, basename, join, dirname } from "node:path";
 import { activityMonitor } from "../activity.js";
 import { isGeminiWebAvailable, queryWithCookies } from "../providers/gemini-web.js";
-import { queryGeminiApiWithVideo, getApiKey, getVersionedApiBase, buildKeyParam, buildAuthHeaders } from "../providers/gemini-api.js";
+import { queryGeminiApiWithVideo, getApiKey, getVersionedApiBase, buildAuthHeaders } from "../providers/gemini-api.js";
 import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "../extract.js";
 import { readExecError, trimErrorText, mapFfmpegError, getWebSearchConfigPath } from "../utils.js";
 
@@ -268,7 +268,7 @@ async function tryVideoGeminiApi(
 		const uploaded = await uploadToFilesApi(info, apiKey, signal);
 		fileName = uploaded.name;
 
-		await pollFileState(fileName, apiKey, signal, 120000);
+		await pollFileState(fileName, signal, 120000);
 
 		const text = await queryGeminiApiWithVideo(prompt, uploaded.uri, {
 			model,
@@ -287,7 +287,7 @@ async function tryVideoGeminiApi(
 		if (shouldRethrow(err)) throw err;
 		return null;
 	} finally {
-		if (fileName) deleteGeminiFile(fileName, apiKey);
+		if (fileName) deleteGeminiFile(fileName);
 	}
 }
 
@@ -324,6 +324,7 @@ async function uploadToFilesApi(
 	const uploadRes = await fetch(uploadUrl, {
 		method: "PUT",
 		headers: {
+			"x-goog-api-key": apiKey,
 			"Content-Length": String(info.sizeBytes),
 			"X-Goog-Upload-Offset": "0",
 			"X-Goog-Upload-Command": "upload, finalize",
@@ -343,7 +344,6 @@ async function uploadToFilesApi(
 
 async function pollFileState(
 	fileName: string,
-	apiKey: string,
 	signal?: AbortSignal,
 	timeoutMs: number = 120000,
 ): Promise<void> {
@@ -353,7 +353,7 @@ async function pollFileState(
 		if (signal?.aborted) throw new Error("Aborted");
 
 		const res = await fetch(
-			`${getVersionedApiBase()}/${fileName}${buildKeyParam(apiKey)}`,
+			`${getVersionedApiBase()}/${fileName}`,
 			{ signal, headers: buildAuthHeaders() },
 		);
 		if (!res.ok) throw new Error(`File state check failed: ${res.status}`);
@@ -368,9 +368,9 @@ async function pollFileState(
 	throw new Error("File processing timed out");
 }
 
-function deleteGeminiFile(fileName: string, apiKey: string): void {
+function deleteGeminiFile(fileName: string): void {
 	fetch(
-		`${getVersionedApiBase()}/${fileName}${buildKeyParam(apiKey)}`,
+		`${getVersionedApiBase()}/${fileName}`,
 		{ method: "DELETE", headers: buildAuthHeaders() },
 	).catch((err) => {
 		const message = err instanceof Error ? err.message : String(err);

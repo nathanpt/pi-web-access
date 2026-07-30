@@ -52,15 +52,6 @@ function isCloudflareGateway(): boolean {
 }
 
 /**
- * Returns the `?key=<apiKey>` query param string, or an empty string when
- * the request should use header-based auth instead (e.g. Cloudflare AI Gateway).
- */
-export function buildKeyParam(apiKey: string | null): string {
-	if (!apiKey || isCloudflareGateway()) return "";
-	return `?key=${apiKey}`;
-}
-
-/**
  * Returns the Cloudflare API key for gateway auth.
  * Resolution order: CLOUDFLARE_API_KEY env var, then cloudflareApiKey in config.
  */
@@ -77,17 +68,20 @@ export function isGatewayConfigured(): boolean {
 }
 
 /**
- * Returns any additional auth headers required for the current API host.
+ * Returns the auth headers required for the current API host.
  * For Cloudflare AI Gateway, this is `cf-aig-authorization: Bearer <token>`
- * using the Cloudflare API key (matching how pi core handles the same gateway).
- * For the default Google endpoint, returns an empty object.
+ * using the Cloudflare API key (matching how pi core handles the same gateway) —
+ * the Gemini key is never sent to the gateway. For the default Google endpoint,
+ * this is `x-goog-api-key: <geminiApiKey>` (header auth replaces the legacy
+ * `?key=` query param, which leaked keys via server/proxy logs and Referer).
  */
 export function buildAuthHeaders(): Record<string, string> {
 	if (isCloudflareGateway()) {
 		const cfKey = getCloudflareApiKey();
-		if (cfKey) return { "cf-aig-authorization": `Bearer ${cfKey}` };
+		return cfKey ? { "cf-aig-authorization": `Bearer ${cfKey}` } : {};
 	}
-	return {};
+	const apiKey = getApiKey();
+	return apiKey ? { "x-goog-api-key": apiKey } : {};
 }
 
 export function isGeminiApiAvailable(): boolean {
@@ -115,7 +109,7 @@ export async function queryGeminiApiWithVideo(
 
 	const model = options.model ?? DEFAULT_MODEL;
 	const signal = withTimeout(options.signal, options.timeoutMs ?? 120000);
-	const url = `${getVersionedApiBase()}/models/${model}:generateContent${buildKeyParam(apiKey)}`;
+	const url = `${getVersionedApiBase()}/models/${model}:generateContent`;
 
 	const fileData: Record<string, string> = { fileUri: videoUri };
 	if (options.mimeType) fileData.mimeType = options.mimeType;

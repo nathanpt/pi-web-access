@@ -1,7 +1,7 @@
 import { getWebSearchConfigPath } from "../utils.js";
 import { loadWebSearchConfig } from "../config.js";
 import { activityMonitor } from "../activity.js";
-import { getApiKey, getVersionedApiBase, buildKeyParam, buildAuthHeaders, isGatewayConfigured, isGeminiApiAvailable, DEFAULT_MODEL } from "./gemini-api.js";
+import { getApiKey, getVersionedApiBase, buildAuthHeaders, isGatewayConfigured, isGeminiApiAvailable, DEFAULT_MODEL } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
@@ -521,7 +521,7 @@ async function searchWithGeminiApi(query: string, options: SearchOptions = {}): 
 			tools: [{ google_search: {} }],
 		};
 
-		const res = await fetch(`${getVersionedApiBase()}/models/${model}:generateContent${buildKeyParam(apiKey)}`, {
+		const res = await fetch(`${getVersionedApiBase()}/models/${model}:generateContent`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
 			body: JSON.stringify(body),
