@@ -125,6 +125,12 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	return "auto";
 }
 
+function resolveRequestedProvider(requested: unknown): SearchProvider {
+	const normalizedRequested = normalizeProviderInput(requested);
+	if (normalizedRequested && normalizedRequested !== "auto") return normalizedRequested;
+	return normalizeProviderInput(loadConfig().provider) ?? "auto";
+}
+
 function normalizeCuratorTimeoutSeconds(value: unknown): number | undefined {
 	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
 	const normalized = Math.floor(value);
@@ -169,7 +175,7 @@ function resolveProvider(
 	requested: unknown,
 	available: ProviderAvailability,
 ): ResolvedSearchProvider {
-	const provider = normalizeProviderInput(requested ?? loadConfig().provider ?? "auto") ?? "auto";
+	const provider = resolveRequestedProvider(requested);
 
 	if (provider === "auto" || provider === "priority") {
 		// Display-only default for the curator UI. `priority` mode still routes
@@ -1273,7 +1279,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Web Search",
 		description: searchDescription,
 		promptSnippet:
-			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
+			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage. Omit provider unless explicitly overriding the configured default.",
 		parameters: Type.Object({
 			query: Type.Optional(Type.String({ description: "Single search query. For research tasks, prefer 'queries' with multiple varied angles instead." })),
 			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched in sequence, each returning its own synthesized answer. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results)." })),
@@ -1284,7 +1290,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-			StringEnum(["auto", "priority", "perplexity", "gemini", "exa", "parallel", "searxng", "olostep", "brave", "tavily", "openai", "brightdata", "firecrawl"], { description: "Search provider (default: auto). Use 'priority' to honor the configured providerPriority order." }),
+			StringEnum(["auto", "priority", "perplexity", "gemini", "exa", "parallel", "searxng", "olostep", "brave", "tavily", "openai", "brightdata", "firecrawl"], { description: "Search provider; omit this field (preferred) to use the configured provider, or use auto when none is configured. Use 'priority' to honor the configured providerPriority order." }),
 			),
 			workflow: Type.Optional(
 				StringEnum(workflowValues, {
@@ -1476,7 +1482,7 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			const resolvedProvider = normalizeProviderInput(params.provider ?? loadConfig().provider);
+			const resolvedProvider = resolveRequestedProvider(params.provider);
 			const rawSearchLimit = pLimit(RAW_SEARCH_CONCURRENCY);
 			let completedSearches = 0;
 			const queryLabel = queryList.length === 1 ? "query" : "queries";
