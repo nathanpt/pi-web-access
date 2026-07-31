@@ -8,8 +8,7 @@ import { normalizeFetchContentParams } from "./fetch-params.js";
 import { clearCloneCache } from "./extractors/github-extract.js";
 import { search, type SearchProvider, type ResolvedSearchProvider } from "./providers/gemini-search.js";
 import { executeCodeSearch } from "./providers/code-search.js";
-import type { SearchResult } from "./providers/perplexity.js";
-import { formatSeconds } from "./utils.js";
+import { formatSearchSummary, formatSeconds } from "./utils.js";
 import {
 	clearResults,
 	deleteResult,
@@ -292,12 +291,6 @@ const MAX_INLINE_CONTENT = 30000; // Content returned directly to agent
 
 function stripThumbnails(results: ExtractedContent[]): ExtractedContent[] {
 	return results.map(({ thumbnail, frames, ...rest }) => rest);
-}
-
-function formatSearchSummary(results: SearchResult[], answer: string): string {
-	let output = answer ? `${answer}\n\n---\n\n**Sources:**\n` : "";
-	output += results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join("\n\n");
-	return output;
 }
 
 function duplicateQuerySet(results: QueryResultData[]): Set<string> {
@@ -904,7 +897,6 @@ export default function (pi: ExtensionAPI) {
 						: `## Query: "${query}"\n\n`;
 				}
 				if (error) output += `Error: ${error}\n\n`;
-				else if (results.length === 0) output += "No results found.\n\n";
 				else output += formatSearchSummary(results, answer) + "\n\n";
 			}
 		}

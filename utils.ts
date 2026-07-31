@@ -24,6 +24,15 @@ export function formatSeconds(s: number): string {
 	return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
+export function formatSearchSummary(results: ReadonlyArray<{ title: string; url: string }>, answer: string): string {
+	if (results.length === 0) {
+		return answer ? `${answer}\n\n---\n\n**Sources:**\nNo sources returned.` : "No results found.";
+	}
+	let output = answer ? `${answer}\n\n---\n\n**Sources:**\n` : "";
+	output += results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join("\n\n");
+	return output;
+}
+
 export function readExecError(err: unknown): { code?: string; stderr: string; message: string } {
 	if (!err || typeof err !== "object") {
 		return { stderr: "", message: String(err) };
